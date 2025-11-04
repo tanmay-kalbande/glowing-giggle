@@ -1,21 +1,24 @@
-
 import React from 'react';
 
 const Footer: React.FC<{ onAdminLoginClick: () => void }> = ({ onAdminLoginClick }) => (
-    <footer className="bg-gradient-to-br from-primary to-secondary text-white p-8 mt-16 text-center shadow-header">
-        <div className="relative z-10 space-y-6">
-            <h3 className="font-inter text-2xl font-bold">तुमचा व्यवसाय वाढवा!</h3>
-            <p className="text-md opacity-90 max-w-lg mx-auto">तुमच्या व्यवसायाची माहिती आमच्या निर्देशिकेत जोडून संपूर्ण गावापर्यंत पोहोचा. नोंदणी प्रक्रिया अगदी सोपी आणि विनामूल्य आहे.</p>
-            <div className="flex flex-col items-center gap-3">
+    <footer className="bg-primary text-white p-8 mt-16 text-center">
+        <div className="relative z-10 space-y-8">
+            <h3 className="font-inter text-3xl font-bold">तुमचा व्यवसाय वाढवा!</h3>
+            <p className="text-lg opacity-90 max-w-2xl mx-auto">
+                तुमच्या व्यवसायाची माहिती आमच्या निर्देशिकेत जोडून संपूर्ण गावापर्यंत पोहोचा. नोंदणी प्रक्रिया अगदी सोपी आणि विनामूल्य आहे.
+            </p>
+            <div className="flex justify-center">
                  <button
                     onClick={onAdminLoginClick}
-                    className="inline-flex items-center gap-3 px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-full transition-all transform hover:scale-105 shadow-lg font-semibold"
+                    className="inline-flex items-center justify-center gap-4 px-10 py-5 bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/20 text-white rounded-full transition-all transform hover:scale-105 shadow-lg"
                 >
-                    <i className="fas fa-user-shield text-xl"></i>
-                    <span className="text-lg font-bold">ॲडमिन लॉगिन / व्यवसाय जोडा</span>
+                    <i className="fas fa-user-shield text-3xl"></i>
+                    <span className="text-xl font-bold text-left leading-tight">
+                        ॲडमिन लॉगिन / व्यवसाय<br/>जोडा
+                    </span>
                 </button>
             </div>
-            <div className="text-sm opacity-80 pt-4">
+            <div className="text-base opacity-80 pt-6">
                 © {new Date().getFullYear()} Jawala Vyapar
             </div>
         </div>
