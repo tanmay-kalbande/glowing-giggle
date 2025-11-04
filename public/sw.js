@@ -1,6 +1,6 @@
 
 // Service Worker for Jawala Business Directory
-const CACHE_NAME = 'jawala-business-v2.1';
+const CACHE_NAME = 'jawala-business-v2';
 const RUNTIME_CACHE = 'jawala-runtime-v2';
 
 // Assets to cache on install
