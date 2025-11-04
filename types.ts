@@ -1,4 +1,3 @@
-
 export interface Category {
   id: string;
   name: string;
@@ -16,6 +15,11 @@ export interface Business {
   services?: string[];
   homeDelivery?: boolean;
   paymentOptions?: string[];
+  // Rating fields
+  avgRating?: number;
+  ratingCount?: number;
+  // New business badge field (server-driven)
+  createdAt?: string;
 }
 
 export interface BusinessData {
