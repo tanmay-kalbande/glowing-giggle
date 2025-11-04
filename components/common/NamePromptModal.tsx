@@ -62,13 +62,6 @@ const NamePromptModal: React.FC<NamePromptModalProps> = ({ onNameSubmit, onSkip 
                         )}
                     </div>
 
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                        <p className="text-sm text-blue-800 flex items-start gap-2">
-                            <i className="fas fa-info-circle mt-0.5 flex-shrink-0"></i>
-                            <span>तुमचे नाव रेटिंग देताना दिसेल. हे पूर्णपणे <strong>ऐच्छिक</strong> आहे - तुम्ही न देताही ॲप वापरू शकता.</span>
-                        </p>
-                    </div>
-
                     <div className="flex flex-col sm:flex-row gap-3">
                         <button
                             type="button"
@@ -87,10 +80,6 @@ const NamePromptModal: React.FC<NamePromptModalProps> = ({ onNameSubmit, onSkip 
                         </button>
                     </div>
                 </form>
-
-                <p className="text-xs text-text-secondary text-center mt-4">
-                    तुम्ही कधीही सेटिंग्जमधून तुमचे नाव बदलू शकता
-                </p>
             </div>
         </div>
     );
