@@ -1,4 +1,4 @@
-// components/BusinessDetailModal.tsx - Updated with Name Prompt
+// components/BusinessDetailModal.tsx - Updated with editable ratings and optional name
 import React, { useState, useEffect } from 'react';
 import { Business } from '../types';
 import { formatPhoneNumber, getDeviceId, hasRated, markAsRated, getUserName, hasBeenPromptedForName, setUserName, markNamePrompted } from '@/utils';
@@ -42,16 +42,17 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
     const [isSubmittingRating, setIsSubmittingRating] = useState(false);
     const [ratingMessage, setRatingMessage] = useState<{text: string, type: 'success' | 'error'} | null>(null);
     
-    // NEW: Name prompt state
-    const [showNamePrompt, setShowNamePrompt] = useState(false);
+    // Name state
     const [userName, setUserNameState] = useState<string | null>(null);
+    const [showNamePrompt, setShowNamePrompt] = useState(false);
+    const [userRating, setUserRating] = useState<number>(0);
     
     // Local state for ratings - always visible
     const [displayRating, setDisplayRating] = useState(0);
     const [displayCount, setDisplayCount] = useState(0);
     const [isLoadingRatings, setIsLoadingRatings] = useState(true);
 
-    // Load rating data and check name whenever business changes
+    // Load rating data whenever business changes
     useEffect(() => {
         const loadRatingData = async () => {
             if (!business) return;
@@ -86,9 +87,9 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
                     }
                 }
                 
-                // NEW: Show name prompt if they haven't been asked and haven't rated
-                if (!localCheck && !hasBeenPromptedForName()) {
-                    setShowNamePrompt(true);
+                // Show soft name prompt on first app use (non-blocking)
+                if (!hasBeenPromptedForName()) {
+                    setTimeout(() => setShowNamePrompt(true), 1000);
                 }
                 
             } catch (error) {
@@ -104,21 +105,27 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
         loadRatingData();
     }, [business]);
 
-    // NEW: Handle name submission
+    // Handle name submission
     const handleNameSubmit = (name: string) => {
         setUserName(name);
         setUserNameState(name);
         setShowNamePrompt(false);
     };
 
-    // NEW: Handle name prompt skip
+    // Handle name prompt skip
     const handleNameSkip = () => {
-        markNamePrompted(); // Remember we asked
+        markNamePrompted();
         setShowNamePrompt(false);
     };
 
     const handleRatingSubmit = async (rating: number) => {
-        if (!business || userHasRated || isSubmittingRating) return;
+        if (!business || isSubmittingRating) return;
+        
+        // Allow editing existing rating
+        if (userHasRated) {
+            const confirm = window.confirm('तुम्ही आधीच रेट केले आहे. तुमचे रेटिंग बदलायचे?');
+            if (!confirm) return;
+        }
         
         setIsSubmittingRating(true);
         setRatingMessage(null);
@@ -128,12 +135,13 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
                 businessId: business.id,
                 rating,
                 deviceId: getDeviceId(),
-                userName: userName || undefined, // NEW: Include user name if available
+                userName: userName || undefined,
             });
             
             // Mark as rated locally
             markAsRated(business.id);
             setUserHasRated(true);
+            setUserRating(rating);
             
             // Update local display immediately with new values
             if (result.newAvgRating !== undefined && result.newRatingCount !== undefined) {
@@ -141,15 +149,20 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
                 setDisplayCount(result.newRatingCount);
             } else {
                 // Fallback: calculate optimistically
-                const newCount = displayCount + 1;
-                const newAvg = ((displayRating * displayCount) + rating) / newCount;
+                const newCount = displayCount + (userRating > 0 ? 0 : 1); // Don't double count if editing
+                const totalRating = (displayRating * displayCount) - (userRating || 0) + rating;
+                const newAvg = totalRating / newCount;
                 setDisplayRating(newAvg);
                 setDisplayCount(newCount);
             }
             
             // Show success message
+            const messageText = userRating > 0 
+                ? 'तुमचे रेटिंग अपडेट केले आहे, धन्यवाद!' 
+                : (result.message || 'तुमचे रेटिंग स्वीकारले आहे, धन्यवाद!');
+            
             setRatingMessage({
-                text: result.message || 'तुमचे रेटिंग स्वीकारले आहे, धन्यवाद!',
+                text: messageText,
                 type: 'success'
             });
             
@@ -167,12 +180,6 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
                 text: errorText,
                 type: 'error'
             });
-            
-            // If server says already rated, sync local state
-            if (error.message && error.message.includes('आधीच')) {
-                markAsRated(business.id);
-                setUserHasRated(true);
-            }
             
             // Clear error message after 5 seconds
             setTimeout(() => setRatingMessage(null), 5000);
@@ -213,7 +220,7 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
 
     return (
         <>
-            {/* NEW: Name Prompt Modal */}
+            {/* Name Prompt Modal */}
             {showNamePrompt && (
                 <NamePromptModal 
                     onNameSubmit={handleNameSubmit}
@@ -262,21 +269,29 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
                                             )}
                                         </div>
 
-                                        {/* Star display - always visible */}
+                                        {/* Star display - always interactive */}
                                         <div className="mb-3">
                                             <StarRating 
-                                                rating={displayRating} 
-                                                onRatingChange={userHasRated ? undefined : handleRatingSubmit}
-                                                disabled={userHasRated || isSubmittingRating}
+                                                rating={userRating || displayRating} 
+                                                onRatingChange={handleRatingSubmit}
+                                                disabled={isSubmittingRating}
                                                 size="lg"
+                                                showLabel={!userHasRated}
                                             />
                                         </div>
 
-                                        {/* NEW: Show user name if available */}
-                                        {userName && !userHasRated && (
+                                        {/* User name display/prompt */}
+                                        {userName ? (
                                             <p className="text-xs text-text-secondary mb-2">
-                                                रेटिंग {userName} म्हणून दिली जाईल
+                                                {userHasRated ? `तुमचे रेटिंग: ${userRating} ⭐` : `रेटिंग ${userName} म्हणून दिली जाईल`}
                                             </p>
+                                        ) : !userHasRated && (
+                                            <button 
+                                                onClick={() => setShowNamePrompt(true)}
+                                                className="text-xs text-primary hover:underline mb-2"
+                                            >
+                                                नाव टाका (ऐच्छिक)
+                                            </button>
                                         )}
 
                                         {/* Rating status message */}
@@ -284,11 +299,11 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
                                             {userHasRated ? (
                                                 <span className="text-green-600 flex items-center justify-center gap-2">
                                                     <i className="fas fa-check-circle"></i>
-                                                    तुम्ही रेट केले आहे
+                                                    तुमचे रेटिंग दिले आहे (बदलण्यासाठी क्लिक करा)
                                                 </span>
                                             ) : (
                                                 <span className="text-primary">
-                                                    {isSubmittingRating ? 'रेटिंग सबमिट करत आहे...' : '⭐ पर क्लिक करून रेट करा'}
+                                                    {isSubmittingRating ? 'रेटिंग सबमिट करत आहे...' : '⭐ रेट करण्यासाठी क्लिक करा'}
                                                 </span>
                                             )}
                                         </p>
