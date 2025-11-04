@@ -39,42 +39,53 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
     const [userHasRated, setUserHasRated] = useState(false);
     const [isSubmittingRating, setIsSubmittingRating] = useState(false);
     const [ratingMessage, setRatingMessage] = useState<{text: string, type: 'success' | 'error'} | null>(null);
-    const [currentRating, setCurrentRating] = useState(0);
-    const [hoverRating, setHoverRating] = useState(0);
-    const [isCheckingRatingStatus, setIsCheckingRatingStatus] = useState(true);
+    
+    // Local state for ratings - always visible
+    const [displayRating, setDisplayRating] = useState(0);
+    const [displayCount, setDisplayCount] = useState(0);
+    const [isLoadingRatings, setIsLoadingRatings] = useState(true);
 
+    // Load rating data whenever business changes
     useEffect(() => {
-        const checkRatingStatus = async () => {
+        const loadRatingData = async () => {
             if (!business) return;
             
-            setIsCheckingRatingStatus(true);
+            setIsLoadingRatings(true);
             
-            // Check local storage first (fast)
-            const localCheck = hasRated(business.id);
-            setUserHasRated(localCheck);
-            
-            // Then verify with server (authoritative)
             try {
-                const deviceId = getDeviceId();
-                const serverCheck = await SupabaseService.hasDeviceRated(business.id, deviceId);
+                // Check if user has rated (local check first for speed)
+                const localCheck = hasRated(business.id);
+                setUserHasRated(localCheck);
                 
-                if (serverCheck !== localCheck) {
-                    // Sync local storage with server state
-                    if (serverCheck) {
-                        markAsRated(business.id);
+                // Fetch fresh rating statistics from server
+                const stats = await SupabaseService.getBusinessRatingStats(business.id);
+                setDisplayRating(stats.avgRating);
+                setDisplayCount(stats.ratingCount);
+                
+                // Verify with server if local check says they haven't rated
+                if (!localCheck) {
+                    const deviceId = getDeviceId();
+                    const serverCheck = await SupabaseService.hasDeviceRated(business.id, deviceId);
+                    
+                    if (serverCheck !== localCheck) {
+                        // Sync local storage with server state
+                        if (serverCheck) {
+                            markAsRated(business.id);
+                        }
+                        setUserHasRated(serverCheck);
                     }
-                    setUserHasRated(serverCheck);
                 }
             } catch (error) {
-                console.error('Error checking rating status:', error);
-                // Use local check as fallback
+                console.error('Error loading rating data:', error);
+                // Fallback to business prop data
+                setDisplayRating(business.avgRating || 0);
+                setDisplayCount(business.ratingCount || 0);
             } finally {
-                setIsCheckingRatingStatus(false);
+                setIsLoadingRatings(false);
             }
         };
         
-        checkRatingStatus();
-        setCurrentRating(business?.avgRating || 0);
+        loadRatingData();
     }, [business]);
 
     const handleRatingSubmit = async (rating: number) => {
@@ -94,9 +105,16 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
             markAsRated(business.id);
             setUserHasRated(true);
             
-            // Update local state with new rating stats
-            if (result.newAvgRating !== undefined) {
-                setCurrentRating(result.newAvgRating);
+            // Update local display immediately with new values
+            if (result.newAvgRating !== undefined && result.newRatingCount !== undefined) {
+                setDisplayRating(result.newAvgRating);
+                setDisplayCount(result.newRatingCount);
+            } else {
+                // Fallback: calculate optimistically
+                const newCount = displayCount + 1;
+                const newAvg = ((displayRating * displayCount) + rating) / newCount;
+                setDisplayRating(newAvg);
+                setDisplayCount(newCount);
             }
             
             // Show success message
@@ -105,7 +123,7 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
                 type: 'success'
             });
             
-            // Notify parent component
+            // Notify parent component to update main list
             onRatingSubmitted(business.id, rating);
             
             // Clear success message after 3 seconds
@@ -114,7 +132,6 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
         } catch (error: any) {
             console.error("Failed to submit rating", error);
             
-            // Show error message
             const errorText = error.message || 'रेटिंग सबमिट करताना त्रुटी आली. कृपया पुन्हा प्रयत्न करा.';
             setRatingMessage({
                 text: errorText,
@@ -163,8 +180,6 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
     if (!business) return null;
     
     const mapUrl = business.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}` : undefined;
-    const displayRating = currentRating || business.avgRating || 0;
-    const displayCount = business.ratingCount || 0;
 
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 animate-fadeInUp" style={{animationDuration: '0.3s'}} onClick={onClose}>
@@ -188,42 +203,60 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
 
                     <InfoCard>
                         <div className="flex flex-col items-center">
-                            {isCheckingRatingStatus ? (
+                            {isLoadingRatings ? (
                                 <div className="py-4">
                                     <i className="fas fa-spinner fa-spin text-2xl text-primary"></i>
-                                    <p className="text-sm text-text-secondary mt-2">रेटिंग स्थिती तपासत आहे...</p>
+                                    <p className="text-sm text-text-secondary mt-2">रेटिंग लोड करत आहे...</p>
                                 </div>
                             ) : (
                                 <>
-                                    <p className="font-bold text-text-primary mb-2">
-                                        {userHasRated ? '⭐ तुम्ही रेट केले आहे' : 'या व्यवसायाला रेट करा'}
-                                    </p>
-                                    <div className="relative">
-                                        <StarRating 
-                                            rating={displayRating} 
-                                            onRatingChange={handleRatingSubmit} 
-                                            disabled={userHasRated || isSubmittingRating || isCheckingRatingStatus}
-                                            size="lg"
-                                        />
-                                        {!userHasRated && !isSubmittingRating && (
-                                            <p className="text-xs text-text-secondary mt-1 text-center">
-                                                ⭐ पर क्लिक करून रेट करा
+                                    {/* Always show current rating statistics */}
+                                    <div className="mb-3 text-center">
+                                        <p className="font-bold text-text-primary text-lg mb-1">
+                                            {displayCount > 0 ? `${displayRating.toFixed(1)} / 5.0` : 'अजून रेटिंग नाही'}
+                                        </p>
+                                        {displayCount > 0 && (
+                                            <p className="text-sm text-text-secondary">
+                                                ({displayCount} {displayCount === 1 ? 'रेटिंग' : 'रेटिंग्स'})
                                             </p>
                                         )}
                                     </div>
-                                    {displayCount > 0 && (
-                                        <p className="text-sm text-text-secondary mt-2">
-                                            <span className="font-bold">{displayRating.toFixed(1)}</span> / 5.0 ({displayCount} रेटिंग)
-                                        </p>
-                                    )}
+
+                                    {/* Star display - always visible */}
+                                    <div className="mb-3">
+                                        <StarRating 
+                                            rating={displayRating} 
+                                            onRatingChange={userHasRated ? undefined : handleRatingSubmit}
+                                            disabled={userHasRated || isSubmittingRating}
+                                            size="lg"
+                                        />
+                                    </div>
+
+                                    {/* Rating status message */}
+                                    <p className="text-sm font-semibold text-center mb-2">
+                                        {userHasRated ? (
+                                            <span className="text-green-600 flex items-center justify-center gap-2">
+                                                <i className="fas fa-check-circle"></i>
+                                                तुम्ही रेट केले आहे
+                                            </span>
+                                        ) : (
+                                            <span className="text-primary">
+                                                {isSubmittingRating ? 'रेटिंग सबमिट करत आहे...' : '⭐ पर क्लिक करून रेट करा'}
+                                            </span>
+                                        )}
+                                    </p>
+
+                                    {/* Loading indicator while submitting */}
                                     {isSubmittingRating && (
-                                        <div className="flex items-center gap-2 mt-2">
+                                        <div className="flex items-center gap-2">
                                             <i className="fas fa-spinner fa-spin text-primary"></i>
-                                            <p className="text-sm text-primary animate-pulse">रेटिंग सबमिट करत आहे...</p>
+                                            <p className="text-sm text-primary animate-pulse">कृपया प्रतीक्षा करा...</p>
                                         </div>
                                     )}
+
+                                    {/* Success/Error messages */}
                                     {ratingMessage && (
-                                        <div className={`mt-3 p-3 rounded-lg text-sm font-semibold text-center ${
+                                        <div className={`mt-3 p-3 rounded-lg text-sm font-semibold text-center animate-fadeInUp ${
                                             ratingMessage.type === 'success' 
                                                 ? 'bg-green-50 text-green-700 border border-green-200' 
                                                 : 'bg-red-50 text-red-700 border border-red-200'
