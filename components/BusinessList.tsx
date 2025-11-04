@@ -23,26 +23,16 @@ const NoResults: React.FC<{isSearching: boolean}> = ({ isSearching }) => (
 );
 
 const BusinessList: React.FC<BusinessListProps> = ({ businesses, categories, selectedCategoryId, onViewDetails, isSearching = false }) => {
-    const categoryMap = React.useMemo(() => new Map<string, Category>(categories.map(cat => [cat.id, cat])), [categories]);
-
     if (businesses.length === 0) {
         return <NoResults isSearching={isSearching} />;
     }
     
     const renderBusinessCards = (businessList: Business[]) => (
-        businessList.map((business, index) => {
-            const category = categoryMap.get(business.category);
-            return (
-                <div key={business.id} className="animate-fadeInUp" style={{ animationDelay: `${index * 50}ms` }}>
-                    <BusinessCard 
-                        business={business} 
-                        onViewDetails={onViewDetails}
-                        categoryName={category?.name}
-                        categoryIcon={category?.icon}
-                    />
-                </div>
-            )
-        })
+        businessList.map((business, index) => (
+            <div key={business.id} className="animate-fadeInUp" style={{ animationDelay: `${index * 50}ms` }}>
+                <BusinessCard business={business} onViewDetails={onViewDetails} />
+            </div>
+        ))
     );
 
     if (selectedCategoryId || isSearching) {
@@ -58,10 +48,12 @@ const BusinessList: React.FC<BusinessListProps> = ({ businesses, categories, sel
         return acc;
     }, {} as Record<string, Business[]>);
 
+    const categoryMap = new Map<string, Category>(categories.map(cat => [cat.id, cat]));
 
     return (
         <div className="space-y-12">
-            {Object.entries(groupedBusinesses).map(([categoryId, businessGroup], groupIndex) => {
+            {Object.keys(groupedBusinesses).map((categoryId, groupIndex) => {
+                const businessGroup = groupedBusinesses[categoryId];
                 const category = categoryMap.get(categoryId);
                 if (!category) return null;
                 
