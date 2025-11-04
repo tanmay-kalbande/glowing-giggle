@@ -191,15 +191,18 @@ export const deleteBusiness = async (businessId: string): Promise<void> => {
   
   if (error) throw error;
 };
+// supabaseClient.ts - Updated portion for rating with name
+// ... [Keep all existing code, only showing the updated rating section]
 
 // ============================================
-// RATING FUNCTIONS - Enhanced Version
+// RATING FUNCTIONS - Enhanced with Name Support
 // ============================================
 
 interface AddRatingPayload {
   businessId: string;
   rating: number;
   deviceId: string;
+  userName?: string; // NEW: Optional user name
 }
 
 interface RatingResponse {
@@ -210,16 +213,18 @@ interface RatingResponse {
 }
 
 /**
- * Adds a rating for a business with enhanced error handling and validation
+ * Adds a rating for a business with user name support
  * @param businessId - The ID of the business being rated
  * @param rating - The rating value (1-5)
  * @param deviceId - Unique device identifier to prevent duplicate ratings
+ * @param userName - Optional user name to associate with rating
  * @returns Promise with rating response details
  */
 export const addBusinessRating = async ({ 
   businessId, 
   rating, 
-  deviceId 
+  deviceId,
+  userName // NEW: User name parameter
 }: AddRatingPayload): Promise<RatingResponse> => {
   // Validate rating value
   if (rating < 1 || rating > 5) {
@@ -250,13 +255,14 @@ export const addBusinessRating = async ({
       throw new Error('तुम्ही या व्यवसायाला आधीच रेट केले आहे.');
     }
 
-    // Insert the new rating
+    // Insert the new rating with optional user name
     const { error: insertError } = await supabase
       .from('business_ratings')
       .insert([{
         business_id: businessId,
         rating,
-        device_id: deviceId
+        device_id: deviceId,
+        user_name: userName || null // NEW: Include user name if provided
       }]);
 
     if (insertError) {
@@ -286,7 +292,9 @@ export const addBusinessRating = async ({
       // Rating was saved, but we couldn't get updated stats
       return {
         success: true,
-        message: 'तुमचे रेटिंग स्वीकारले आहे, धन्यवाद!'
+        message: userName 
+          ? `धन्यवाद ${userName}! तुमचे रेटिंग स्वीकारले आहे.` 
+          : 'तुमचे रेटिंग स्वीकारले आहे, धन्यवाद!'
       };
     }
 
@@ -298,7 +306,9 @@ export const addBusinessRating = async ({
 
     return {
       success: true,
-      message: 'तुमचे रेटिंग स्वीकारले आहे, धन्यवाद!',
+      message: userName 
+        ? `धन्यवाद ${userName}! तुमचे रेटिंग स्वीकारले आहे.` 
+        : 'तुमचे रेटिंग स्वीकारले आहे, धन्यवाद!',
       newAvgRating: avgRating,
       newRatingCount: totalRatings
     };
@@ -310,14 +320,14 @@ export const addBusinessRating = async ({
 };
 
 /**
- * Fetches all ratings for a specific business
+ * Fetches all ratings for a specific business (with user names)
  * @param businessId - The ID of the business
- * @returns Array of rating objects
+ * @returns Array of rating objects with optional user names
  */
 export const getBusinessRatings = async (businessId: string) => {
   const { data, error } = await supabase
     .from('business_ratings')
-    .select('rating, created_at')
+    .select('rating, user_name, created_at') // NEW: Include user_name
     .eq('business_id', businessId)
     .order('created_at', { ascending: false });
 
@@ -329,64 +339,7 @@ export const getBusinessRatings = async (businessId: string) => {
   return data || [];
 };
 
-/**
- * Gets rating statistics for a business
- * @param businessId - The ID of the business
- * @returns Object with average rating and count
- */
-export const getBusinessRatingStats = async (businessId: string) => {
-  const { data, error } = await supabase
-    .from('business_ratings')
-    .select('rating')
-    .eq('business_id', businessId);
-
-  if (error) {
-    console.error('Error fetching rating stats:', error);
-    return { avgRating: 0, ratingCount: 0 };
-  }
-
-  const ratings = data || [];
-  const count = ratings.length;
-  const sum = ratings.reduce((acc, r) => acc + r.rating, 0);
-  const avg = count > 0 ? sum / count : 0;
-
-  return {
-    avgRating: avg,
-    ratingCount: count
-  };
-};
-
-/**
- * Checks if a device has already rated a specific business
- * @param businessId - The ID of the business
- * @param deviceId - The device identifier
- * @returns Boolean indicating if already rated
- */
-export const hasDeviceRated = async (
-  businessId: string, 
-  deviceId: string
-): Promise<boolean> => {
-  try {
-    const { data, error } = await supabase
-      .from('business_ratings')
-      .select('id')
-      .eq('business_id', businessId)
-      .eq('device_id', deviceId)
-      .maybeSingle();
-
-    if (error) {
-      console.error('Error checking rating status:', error);
-      return false;
-    }
-
-    return !!data;
-  } catch (error) {
-    console.error('Error in hasDeviceRated:', error);
-    return false;
-  }
-};
-
-
+// ... [Keep all other existing functions unchanged]
 // ============================================
 // Data Version/Sync Functions
 // ============================================
