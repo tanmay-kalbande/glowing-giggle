@@ -10,26 +10,39 @@ interface BusinessCardProps {
 
 const BusinessCard: React.FC<BusinessCardProps> = ({ business, onViewDetails }) => {
     return (
-        <div className={`relative group bg-surface rounded-xl shadow-card transition-all duration-300 border-l-4 border-transparent hover:border-primary hover:shadow-card-hover hover:scale-[1.02] ${business.homeDelivery ? 'pt-5 px-5 pb-8' : 'p-5'}`}>
+        <div className={`relative group bg-surface rounded-xl shadow-card transition-all duration-300 border-l-4 border-transparent hover:border-primary hover:shadow-card-hover hover:scale-[1.02] p-5 ${business.homeDelivery || (business.ratingCount && business.ratingCount > 0) ? 'pb-8' : ''}`}>
             
-            {business.homeDelivery && (
-                <div className="absolute bottom-0 right-0 bg-secondary text-white text-xs font-bold px-3 py-1 rounded-tl-lg rounded-br-xl flex items-center gap-1.5" title="होम डिलिव्हरी उपलब्ध">
-                    <i className="fas fa-bicycle"></i>
-                    <span>डिलिव्हरी</span>
+            {/* Bottom badges container */}
+            <div className="absolute bottom-0 right-0 flex items-center gap-2">
+                {/* Rating badge - Always show */}
+                <div className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-white text-xs font-bold px-3 py-1 rounded-tl-lg flex items-center gap-1.5 shadow-md" title={business.ratingCount && business.ratingCount > 0 ? `${business.ratingCount} रेटिंग्स` : 'अजून रेटिंग नाही'}>
+                    {business.ratingCount && business.ratingCount > 0 ? (
+                        <>
+                            <span className="text-sm">{(business.avgRating || 0).toFixed(1)}</span>
+                            <i className="fas fa-star text-xs"></i>
+                        </>
+                    ) : (
+                        <>
+                            <span className="text-sm opacity-80">-</span>
+                            <i className="far fa-star text-xs opacity-80"></i>
+                        </>
+                    )}
                 </div>
-            )}
+                
+                {/* Delivery badge */}
+                {business.homeDelivery && (
+                    <div className="bg-secondary text-white text-xs font-bold px-3 py-1 rounded-br-xl flex items-center gap-1.5 shadow-md" title="होम डिलिव्हरी उपलब्ध">
+                        <i className="fas fa-bicycle"></i>
+                        <span>डिलिव्हरी</span>
+                    </div>
+                )}
+            </div>
 
             <div className="flex justify-between items-start gap-4">
                 {/* Left side: Info */}
                 <div className="flex-grow min-w-0">
                     <div className="flex items-center justify-between">
                          <h4 className="font-inter text-lg font-bold text-primary pr-4 truncate group-hover:whitespace-normal" title={business.shopName}>{business.shopName}</h4>
-                         {business.ratingCount && business.ratingCount > 0 && (
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                                <span className="font-bold text-yellow-500 text-sm">{(business.avgRating || 0).toFixed(1)}</span>
-                                <i className="fas fa-star text-yellow-500 text-sm"></i>
-                            </div>
-                         )}
                     </div>
                     <div className="mt-2 space-y-1.5 text-text-secondary">
                         <p className="flex items-center gap-3">
