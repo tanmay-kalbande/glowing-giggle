@@ -41,8 +41,14 @@ const App: React.FC = () => {
     const [isInstallable, setIsInstallable] = useState(false);
     const [showInstallPrompt, setShowInstallPrompt] = useState(false);
 
-    const loadData = useCallback(async () => {
-        setIsLoading(true);
+    const loadData = useCallback(async (forceRefresh = false) => {
+        if (!forceRefresh && businesses.length > 0) {
+            // Don't show loading spinner if we already have data
+            setIsLoading(false);
+        } else {
+            setIsLoading(true);
+        }
+        
         try {
             const result = await CacheService.smartSync(
                 SupabaseService.getDataVersion,
@@ -55,9 +61,10 @@ const App: React.FC = () => {
             setBusinesses(result.businesses);
             setCategories(result.categories);
             
+            // Handle deep link to specific business
             const params = new URLSearchParams(window.location.search);
             const businessId = params.get('businessId');
-            if (businessId) {
+            if (businessId && result.businesses.length > 0) {
                 const businessToView = result.businesses.find(b => b.id === businessId);
                 if (businessToView) {
                     setTimeout(() => {
@@ -72,7 +79,7 @@ const App: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [businesses.length]);
     
     useEffect(() => {
         loadData();
@@ -83,7 +90,7 @@ const App: React.FC = () => {
             }
         };
         checkUser();
-    }, [loadData]);
+    }, []);
 
     useEffect(() => {
         const handler = (e: Event) => {
@@ -98,11 +105,20 @@ const App: React.FC = () => {
         return () => window.removeEventListener('beforeinstallprompt', handler);
     }, []);
     
+    // Real-time subscription for database changes
     useEffect(() => {
         const subscription = SupabaseService.subscribeToBusinessChanges(async (payload) => {
-            console.log("Real-time change detected:", payload.eventType);
-            await loadData(); // Reload all data on any change
+            console.log("Real-time change detected:", payload.eventType, payload.table);
+            
+            // For rating changes, just refresh the data silently
+            if (payload.table === 'business_ratings') {
+                await loadData(false); // Don't show loading spinner
+            } else {
+                // For business changes, do a full refresh
+                await loadData(true);
+            }
         });
+        
         return () => {
             subscription.unsubscribe();
         };
@@ -138,12 +154,18 @@ const App: React.FC = () => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const handleViewDetails = (business: Business) => setSelectedBusiness(business);
+    const handleViewDetails = (business: Business) => {
+        // Find the latest version of this business from state
+        const latestBusiness = businesses.find(b => b.id === business.id) || business;
+        setSelectedBusiness(latestBusiness);
+    };
+    
     const handleLoginSuccess = (loggedInUser: User) => {
         setUser(loggedInUser);
         setIsLoginModalOpen(false);
         setIsAdminDashboardOpen(true);
     };
+    
     const handleLogout = async () => {
         await SupabaseService.signOut();
         setUser(null);
@@ -161,16 +183,23 @@ const App: React.FC = () => {
             setIsBusinessFormOpen(false);
             setEditingBusiness(null);
             setIsEditListOpen(false);
+            // Data will refresh automatically via real-time subscription
         } catch (error) {
             console.error("Error saving business:", error);
-            alert("Failed to save business.");
+            alert("व्यवसाय सेव्ह करताना त्रुटी आली. कृपया पुन्हा प्रयत्न करा.");
         } finally {
             setIsSaving(false);
         }
     };
     
     const handleDeleteBusiness = async (businessId: string) => {
-        await SupabaseService.deleteBusiness(businessId);
+        try {
+            await SupabaseService.deleteBusiness(businessId);
+            // Data will refresh automatically via real-time subscription
+        } catch (error) {
+            console.error("Error deleting business:", error);
+            alert("व्यवसाय हटवताना त्रुटी आली.");
+        }
     };
 
     const handleInstallClick = async () => {
@@ -184,19 +213,22 @@ const App: React.FC = () => {
         setIsInstallable(false);
     };
     
-    const handleRatingSubmitted = (businessId: string, newRating: number) => {
-        // Optimistically update the UI
-        setBusinesses(prevBusinesses => 
-            prevBusinesses.map(b => {
-                if (b.id === businessId) {
-                    const oldTotalRating = (b.avgRating || 0) * (b.ratingCount || 0);
-                    const newRatingCount = (b.ratingCount || 0) + 1;
-                    const newAvgRating = (oldTotalRating + newRating) / newRatingCount;
-                    return { ...b, avgRating: newAvgRating, ratingCount: newRatingCount };
+    const handleRatingSubmitted = async (businessId: string, newRating: number) => {
+        // Immediately fetch fresh data from server
+        try {
+            const freshBusinesses = await SupabaseService.fetchBusinesses();
+            setBusinesses(freshBusinesses);
+            
+            // Update the selected business if it's the one that was rated
+            if (selectedBusiness && selectedBusiness.id === businessId) {
+                const updatedBusiness = freshBusinesses.find(b => b.id === businessId);
+                if (updatedBusiness) {
+                    setSelectedBusiness(updatedBusiness);
                 }
-                return b;
-            })
-        );
+            }
+        } catch (error) {
+            console.error("Error refreshing after rating:", error);
+        }
     };
 
     if (isLoading && businesses.length === 0) {
@@ -244,14 +276,33 @@ const App: React.FC = () => {
             
             <Footer onAdminLoginClick={() => user ? setIsAdminDashboardOpen(true) : setIsLoginModalOpen(true)} />
             
-            {selectedBusiness && <BusinessDetailModal business={selectedBusiness} onClose={() => setSelectedBusiness(null)} onRatingSubmitted={handleRatingSubmitted} />}
-            {isLoginModalOpen && <LoginModal onLoginSuccess={handleLoginSuccess} onClose={() => setIsLoginModalOpen(false)} />}
+            {selectedBusiness && (
+                <BusinessDetailModal 
+                    business={selectedBusiness} 
+                    onClose={() => setSelectedBusiness(null)} 
+                    onRatingSubmitted={handleRatingSubmitted} 
+                />
+            )}
+            
+            {isLoginModalOpen && (
+                <LoginModal 
+                    onLoginSuccess={handleLoginSuccess} 
+                    onClose={() => setIsLoginModalOpen(false)} 
+                />
+            )}
             
             {user && isAdminDashboardOpen && (
                 <AdminDashboard 
                     onClose={() => setIsAdminDashboardOpen(false)}
-                    onAdd={() => { setIsAdminDashboardOpen(false); setIsBusinessFormOpen(true); setEditingBusiness(null); }}
-                    onEdit={() => { setIsAdminDashboardOpen(false); setIsEditListOpen(true); }}
+                    onAdd={() => { 
+                        setIsAdminDashboardOpen(false); 
+                        setIsBusinessFormOpen(true); 
+                        setEditingBusiness(null); 
+                    }}
+                    onEdit={() => { 
+                        setIsAdminDashboardOpen(false); 
+                        setIsEditListOpen(true); 
+                    }}
                     onLogout={handleLogout}
                 />
             )}
@@ -273,10 +324,17 @@ const App: React.FC = () => {
             {user && isEditListOpen && (
                 <EditBusinessList
                     businesses={businesses}
-                    onSelect={(b) => { setEditingBusiness(b); setIsEditListOpen(false); setIsBusinessFormOpen(true); }}
+                    onSelect={(b) => { 
+                        setEditingBusiness(b); 
+                        setIsEditListOpen(false); 
+                        setIsBusinessFormOpen(true); 
+                    }}
                     onDelete={handleDeleteBusiness}
                     onClose={() => setIsEditListOpen(false)}
-                    onBack={() => { setIsEditListOpen(false); setIsAdminDashboardOpen(true); }}
+                    onBack={() => { 
+                        setIsEditListOpen(false); 
+                        setIsAdminDashboardOpen(true); 
+                    }}
                 />
             )}
             
