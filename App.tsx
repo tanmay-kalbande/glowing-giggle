@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Business, Category, BusinessData } from './types';
 import { User } from '@supabase/supabase-js';
 import * as SupabaseService from './supabaseClient';
@@ -27,6 +26,10 @@ const App: React.FC = () => {
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
     const [viewedBusiness, setViewedBusiness] = useState<Business | null>(null);
     
+    // PWA Install state
+    const [isInstallable, setIsInstallable] = useState(false);
+    const deferredPromptRef = useRef<any>(null);
+
     // Admin state
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [showLogin, setShowLogin] = useState(false);
@@ -34,8 +37,17 @@ const App: React.FC = () => {
     const [businessToEdit, setBusinessToEdit] = useState<Business | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
-    // Load initial data
+    // Load initial data & PWA prompt handler
     useEffect(() => {
+        const handleBeforeInstallPrompt = (e: Event) => {
+            e.preventDefault();
+            deferredPromptRef.current = e;
+            setIsInstallable(true);
+            console.log('📱 PWA install prompt ready');
+        };
+
+        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
         const loadData = async () => {
             try {
                 const cachedData = await Promise.all([
@@ -62,25 +74,37 @@ const App: React.FC = () => {
                     }
                 );
 
-                if (syncResult.action !== 'no_change') {
+                if (syncResult.action !== 'no_change' || businessData.businesses.length === 0) {
                     console.log(`📱 Data ${syncResult.fromCache ? 'from cache' : 'synced from server'}`);
                     setBusinessData({
                         categories: syncResult.categories.sort((a, b) => a.name.localeCompare(b.name)),
                         businesses: syncResult.businesses
                     });
                 }
+                
+                // --- Handle Shared URL ---
+                const pathParts = window.location.pathname.split('/').filter(Boolean);
+                let businessIdFromUrl: string | null = null;
 
-                const params = new URLSearchParams(window.location.search);
-                const businessId = params.get('businessId');
-                if (businessId) {
-                    const businessToView = syncResult.businesses.find(b => b.id === businessId);
+                if (pathParts[0] === 'business' && pathParts.length >= 2) {
+                    // Get ID from URL: /business/slug/id
+                    businessIdFromUrl = pathParts[pathParts.length - 1];
+                } else {
+                    // Fallback for old URL: /?businessId=...
+                    businessIdFromUrl = new URLSearchParams(window.location.search).get('businessId');
+                }
+
+                if (businessIdFromUrl) {
+                    const businessToView = syncResult.businesses.find(b => b.id === businessIdFromUrl);
                     if (businessToView) {
                         setTimeout(() => {
                             setViewedBusiness(businessToView);
-                            window.history.replaceState({}, document.title, window.location.pathname);
+                            // Clean the URL
+                            window.history.replaceState({}, document.title, window.location.pathname.split('?')[0]);
                         }, 100);
                     }
                 }
+                // --- End Handle Shared URL ---
 
                 const user = await SupabaseService.getCurrentUser();
                 if (user) {
@@ -123,8 +147,22 @@ const App: React.FC = () => {
 
         return () => {
             subscription.unsubscribe();
+            window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
         };
     }, []);
+
+    const handleInstallClick = () => {
+        if (deferredPromptRef.current) {
+            deferredPromptRef.current.prompt();
+            deferredPromptRef.current.userChoice.then((choiceResult: any) => {
+                if (choiceResult.outcome === 'accepted') {
+                    console.log('✅ PWA installed');
+                }
+                setIsInstallable(false);
+                deferredPromptRef.current = null;
+            });
+        }
+    };
 
     const handleCategorySelect = useCallback((categoryId: string | null) => {
         setSelectedCategory(categoryId);
@@ -218,7 +256,7 @@ const App: React.FC = () => {
     return (
         <div className="min-h-screen flex flex-col">
             <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 max-w-4xl flex-grow">
-                <Header />
+                <Header isInstallable={isInstallable} onInstallClick={handleInstallClick} />
                 <AiAssistant 
                     businesses={businessData.businesses} 
                     categories={businessData.categories} 
