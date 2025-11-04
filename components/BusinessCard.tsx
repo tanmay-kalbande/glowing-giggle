@@ -1,18 +1,11 @@
-
 import React from 'react';
 import { Business } from '../types';
+import { formatPhoneNumber } from '../utils';
 
 interface BusinessCardProps {
     business: Business;
     onViewDetails: (business: Business) => void;
 }
-
-const formatPhoneNumber = (phoneNumber: string): string => {
-    if (phoneNumber.length === 10) {
-        return `+91 ${phoneNumber.slice(0, 5)} ${phoneNumber.slice(5)}`;
-    }
-    return phoneNumber;
-};
 
 const BusinessCard: React.FC<BusinessCardProps> = ({ business, onViewDetails }) => {
     return (
