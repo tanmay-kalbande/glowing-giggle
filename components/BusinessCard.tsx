@@ -1,6 +1,6 @@
 import React from 'react';
 import { Business } from '../types';
-import { formatPhoneNumber } from '../utils';
+import { formatPhoneNumber } from '@/utils';
 
 interface BusinessCardProps {
     business: Business;
