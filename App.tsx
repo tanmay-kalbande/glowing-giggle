@@ -99,8 +99,8 @@ const App: React.FC = () => {
                     if (businessToView) {
                         setTimeout(() => {
                             setViewedBusiness(businessToView);
-                            // Clean the URL
-                            window.history.replaceState({}, document.title, window.location.pathname.split('?')[0]);
+                            // Clean the URL to the base path
+                            window.history.replaceState({}, document.title, '/');
                         }, 100);
                     }
                 }
