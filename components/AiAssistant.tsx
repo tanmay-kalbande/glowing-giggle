@@ -1,14 +1,7 @@
-
 import React, { useState, useMemo } from 'react';
 import { Business, Category } from '../types';
 import { GoogleGenAI, Type } from "@google/genai";
-
-const formatPhoneNumber = (phoneNumber: string): string => {
-    if (phoneNumber.length === 10) {
-        return `+91 ${phoneNumber.slice(0, 5)} ${phoneNumber.slice(5)}`;
-    }
-    return phoneNumber;
-};
+import { formatPhoneNumber } from '../utils';
 
 interface AiResult {
     summary: string;
