@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Business } from '../types';
-import { formatPhoneNumber, createSlug } from '../utils';
+import { formatPhoneNumber, createSlug } from '@/utils';
 
 const DetailItem: React.FC<{icon: string, label: string, value?: string, href?: string}> = ({icon, label, value, href}) => {
     if (!value) return null;
