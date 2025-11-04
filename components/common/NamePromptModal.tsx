@@ -1,4 +1,4 @@
-// components/common/NamePromptModal.tsx
+// components/common/NamePromptModal.tsx - Updated with optional messaging
 import React, { useState } from 'react';
 
 interface NamePromptModalProps {
@@ -27,17 +27,17 @@ const NamePromptModal: React.FC<NamePromptModalProps> = ({ onNameSubmit, onSkip 
     };
 
     return (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fadeInUp" style={{animationDuration: '0.3s'}}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeInUp backdrop-blur-sm" style={{animationDuration: '0.3s'}}>
             <div className="bg-surface rounded-xl shadow-xl w-11/12 max-w-md m-4 p-6">
                 <div className="text-center mb-6">
-                    <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-4">
-                        <i className="fas fa-user text-3xl text-primary"></i>
+                    <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary to-secondary rounded-full mb-4">
+                        <i className="fas fa-user text-3xl text-white"></i>
                     </div>
                     <h3 className="font-inter text-2xl font-bold text-primary mb-2">
-                        स्वागत आहे! 🙏
+                        🙏 स्वागत आहे!
                     </h3>
                     <p className="text-text-secondary text-sm">
-                        रेटिंग देण्यासाठी कृपया तुमचे नाव टाका
+                        तुमचे नाव शेअर करा आणि आमच्या कम्युनिटीचा भाग व्हा
                     </p>
                 </div>
 
@@ -65,7 +65,7 @@ const NamePromptModal: React.FC<NamePromptModalProps> = ({ onNameSubmit, onSkip 
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                         <p className="text-sm text-blue-800 flex items-start gap-2">
                             <i className="fas fa-info-circle mt-0.5 flex-shrink-0"></i>
-                            <span>तुमचे नाव फक्त रेटिंग सोबत दिसेल. हे फक्त एकदाच विचारले जाईल.</span>
+                            <span>तुमचे नाव रेटिंग देताना दिसेल. हे पूर्णपणे <strong>ऐच्छिक</strong> आहे - तुम्ही न देताही ॲप वापरू शकता.</span>
                         </p>
                     </div>
 
@@ -73,15 +73,17 @@ const NamePromptModal: React.FC<NamePromptModalProps> = ({ onNameSubmit, onSkip 
                         <button
                             type="button"
                             onClick={onSkip}
-                            className="flex-1 py-3 px-4 bg-gray-200 text-text-secondary font-bold rounded-lg hover:bg-gray-300 transition-colors"
+                            className="flex-1 py-3 px-4 bg-gray-200 text-text-secondary font-bold rounded-lg hover:bg-gray-300 transition-colors flex items-center justify-center gap-2"
                         >
-                            सध्या नाही
+                            <i className="fas fa-forward"></i>
+                            नाही, धन्यवाद
                         </button>
                         <button
                             type="submit"
-                            className="flex-1 py-3 px-4 bg-primary text-white font-bold rounded-lg hover:bg-primary/90 transition-colors"
+                            className="flex-1 py-3 px-4 bg-gradient-to-r from-primary to-secondary text-white font-bold rounded-lg hover:opacity-90 transition-all shadow-md flex items-center justify-center gap-2"
                         >
-                            पुढे जा
+                            <i className="fas fa-check"></i>
+                            नाव सेव्ह करा
                         </button>
                     </div>
                 </form>
