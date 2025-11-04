@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid'; // A small utility for generating UUIDs
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Formats a 10-digit phone number into a more readable format.
@@ -52,14 +52,4 @@ export const markAsRated = (businessId: string): void => {
         ratedIds.push(businessId);
         localStorage.setItem(RATED_BUSINESSES_KEY, JSON.stringify(ratedIds));
     }
-};
-
-// Add uuid utility to the project
-// In a real project, you would `npm install uuid` and `npm install @types/uuid`
-// For this environment, we can define a simple polyfill.
-const v4 = () => {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
 };
