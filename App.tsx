@@ -55,16 +55,13 @@ const App: React.FC = () => {
             setBusinesses(result.businesses);
             setCategories(result.categories);
             
-            // Check for shared business in URL after data is loaded
             const params = new URLSearchParams(window.location.search);
             const businessId = params.get('businessId');
             if (businessId) {
                 const businessToView = result.businesses.find(b => b.id === businessId);
                 if (businessToView) {
-                    // Use a timeout to ensure the UI is ready
                     setTimeout(() => {
                         setSelectedBusiness(businessToView);
-                        // Clean the URL
                         window.history.replaceState({}, document.title, window.location.pathname);
                     }, 100);
                 }
@@ -102,8 +99,9 @@ const App: React.FC = () => {
     }, []);
     
     useEffect(() => {
-        const subscription = SupabaseService.subscribeToBusinessChanges(async () => {
-            await loadData();
+        const subscription = SupabaseService.subscribeToBusinessChanges(async (payload) => {
+            console.log("Real-time change detected:", payload.eventType);
+            await loadData(); // Reload all data on any change
         });
         return () => {
             subscription.unsubscribe();
@@ -177,13 +175,28 @@ const App: React.FC = () => {
 
     const handleInstallClick = async () => {
         if (!deferredPrompt) {
-            setShowInstallPrompt(true); // Show iOS prompt if no deferred prompt
+            setShowInstallPrompt(true);
             return;
         }
         deferredPrompt.prompt();
         await deferredPrompt.userChoice;
         setDeferredPrompt(null);
         setIsInstallable(false);
+    };
+    
+    const handleRatingSubmitted = (businessId: string, newRating: number) => {
+        // Optimistically update the UI
+        setBusinesses(prevBusinesses => 
+            prevBusinesses.map(b => {
+                if (b.id === businessId) {
+                    const oldTotalRating = (b.avgRating || 0) * (b.ratingCount || 0);
+                    const newRatingCount = (b.ratingCount || 0) + 1;
+                    const newAvgRating = (oldTotalRating + newRating) / newRatingCount;
+                    return { ...b, avgRating: newAvgRating, ratingCount: newRatingCount };
+                }
+                return b;
+            })
+        );
     };
 
     if (isLoading && businesses.length === 0) {
@@ -231,7 +244,7 @@ const App: React.FC = () => {
             
             <Footer onAdminLoginClick={() => user ? setIsAdminDashboardOpen(true) : setIsLoginModalOpen(true)} />
             
-            {selectedBusiness && <BusinessDetailModal business={selectedBusiness} onClose={() => setSelectedBusiness(null)} />}
+            {selectedBusiness && <BusinessDetailModal business={selectedBusiness} onClose={() => setSelectedBusiness(null)} onRatingSubmitted={handleRatingSubmitted} />}
             {isLoginModalOpen && <LoginModal onLoginSuccess={handleLoginSuccess} onClose={() => setIsLoginModalOpen(false)} />}
             
             {user && isAdminDashboardOpen && (
@@ -249,7 +262,7 @@ const App: React.FC = () => {
                     onClose={() => { 
                         setIsBusinessFormOpen(false); 
                         setEditingBusiness(null); 
-                        if (editingBusiness) setIsEditListOpen(true); // Go back to edit list if we were editing
+                        if (editingBusiness) setIsEditListOpen(true);
                     }} 
                     onSave={handleSaveBusiness} 
                     existingBusiness={editingBusiness}
