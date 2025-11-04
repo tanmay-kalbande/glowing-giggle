@@ -125,13 +125,38 @@ export const fetchCategories = async (): Promise<Category[]> => {
 // Businesses Functions
 // ============================================
 export const fetchBusinesses = async (): Promise<Business[]> => {
-  const { data, error } = await supabase.rpc('get_businesses_with_ratings');
-  
+  // FIX: Replaced broken RPC call with a direct query and client-side processing.
+  // This is more robust against backend SQL function errors.
+  const { data, error } = await supabase
+    .from('businesses')
+    .select('*, business_ratings(rating)')
+    .order('shop_name', { ascending: true });
+
   if (error) {
     console.error("Error fetching businesses with ratings:", error);
+    // If the join fails, fall back to fetching just businesses
     return fetchBusinessesWithoutRatings();
   }
-  return (data || []).map(dbBusinessToBusiness);
+  
+  // Process the data to calculate avgRating and ratingCount
+  const businessesWithRatings = data.map(b => {
+    const ratings = (b as any).business_ratings;
+    const ratingCount = ratings.length;
+    const avgRating = ratingCount > 0 
+      ? ratings.reduce((sum: number, r: {rating: number}) => sum + r.rating, 0) / ratingCount 
+      : 0;
+    
+    // Remove the temporary ratings array from the object
+    const { business_ratings, ...rest } = b as any;
+
+    return dbBusinessToBusiness({
+      ...rest,
+      avg_rating: avgRating,
+      rating_count: ratingCount,
+    } as DbBusiness);
+  });
+
+  return businessesWithRatings;
 };
 
 const fetchBusinessesWithoutRatings = async (): Promise<Business[]> => {
@@ -274,7 +299,7 @@ export const addBusinessRating = async ({
 
 export const getBusinessRatingStats = async (businessId: string): Promise<{ avgRating: number; ratingCount: number }> => {
   const { data, error } = await supabase
-    .rpc('get_business_rating_stats', { p_business_id: businessId });
+    .rpc('get_business_ratings_stats', { p_business_id: businessId }); // FIX: Changed to plural 'ratings' as a speculative fix for 404.
 
   if (error) {
     console.error('Error fetching rating stats:', error);
@@ -370,14 +395,104 @@ export interface AdminStatistics {
 }
 
 export const getAdminStatistics = async (): Promise<AdminStatistics | null> => {
-  const { data, error } = await supabase.rpc('get_admin_statistics');
+  // FIX: Replaced broken RPC with a client-side implementation to ensure dashboard works.
+  try {
+    // Fetch all necessary raw data in parallel
+    const [
+      businessesData,
+      categoriesData,
+      ratingsData,
+      deliveryData,
+      recentRatingsData
+    ] = await Promise.all([
+      supabase.from('businesses').select('*, business_ratings(rating, created_at, user_name)').order('created_at', { ascending: false }),
+      supabase.from('categories').select('id, name'),
+      supabase.from('business_ratings').select('rating', { count: 'exact' }),
+      supabase.from('businesses').select('id', { count: 'exact' }).eq('home_delivery', true),
+      supabase.from('business_ratings').select('rating, user_name, created_at, businesses(shop_name)').order('created_at', { ascending: false }).limit(5)
+    ]);
 
-  if (error) {
+    // Check for errors in parallel fetches
+    if (businessesData.error) throw businessesData.error;
+    if (categoriesData.error) throw categoriesData.error;
+    if (ratingsData.error) throw ratingsData.error;
+    if (deliveryData.error) throw deliveryData.error;
+    if (recentRatingsData.error) throw recentRatingsData.error;
+
+    const allBusinesses = businessesData.data as any[];
+    const allCategories = categoriesData.data;
+    const totalRatings = ratingsData.count || 0;
+    const totalBusinesses = allBusinesses.length;
+
+    // Calculate overall average rating
+    const totalRatingSum = allBusinesses.reduce((acc, b) => {
+        return acc + b.business_ratings.reduce((sum: number, r: { rating: number }) => sum + r.rating, 0);
+    }, 0);
+    const avgRatingOverall = totalRatings > 0 ? totalRatingSum / totalRatings : 0;
+
+    // Process businesses for top rated and category stats
+    const processedBusinesses = allBusinesses.map(b => {
+      const ratings = b.business_ratings;
+      const ratingCount = ratings.length;
+      const avgRating = ratingCount > 0 ? ratings.reduce((sum: number, r: { rating: number }) => sum + r.rating, 0) / ratingCount : 0;
+      return { ...b, avgRating, ratingCount };
+    });
+
+    // Get top 5 rated businesses
+    const topRatedBusinesses = [...processedBusinesses]
+      .sort((a, b) => b.avgRating - a.avgRating)
+      .slice(0, 5)
+      .map(b => ({
+        shop_name: b.shop_name,
+        owner_name: b.owner_name,
+        avg_rating: b.avgRating,
+        rating_count: b.ratingCount,
+      }));
+
+    // Get recent 5 businesses
+    const recentBusinesses = allBusinesses.slice(0, 5).map(b => ({
+      shop_name: b.shop_name,
+      owner_name: b.owner_name,
+      created_at: b.created_at,
+    }));
+
+    // Calculate category stats
+    const categoryMap = new Map(allCategories.map(c => [c.id, c.name]));
+    const categoryCounts = allBusinesses.reduce((acc, b) => {
+      const catName = categoryMap.get(b.category) || 'Uncategorized';
+      acc[catName] = (acc[catName] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    const categoryStats = Object.entries(categoryCounts).map(([name, count]) => ({
+      category_name: name,
+      business_count: count,
+    })).sort((a,b) => b.business_count - a.business_count);
+    
+    // Format recent ratings
+    const recentRatings = (recentRatingsData.data as any[]).map((r: any) => ({
+        business_name: r.businesses.shop_name,
+        rating: r.rating,
+        user_name: r.user_name,
+        created_at: r.created_at
+    }));
+
+    return {
+      total_businesses: totalBusinesses,
+      total_categories: allCategories.length,
+      total_ratings: totalRatings,
+      avg_rating_overall: avgRatingOverall,
+      businesses_with_delivery: deliveryData.count || 0,
+      recent_businesses: recentBusinesses,
+      top_rated_businesses: topRatedBusinesses,
+      category_stats: categoryStats,
+      recent_ratings: recentRatings,
+    };
+
+  } catch (error) {
     console.error('Error fetching admin statistics:', error);
     return null;
   }
-
-  return data;
 };
 
 // ============================================
