@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Business } from '../types';
-import { formatPhoneNumber, createSlug } from '@/utils';
+import { formatPhoneNumber } from '@/utils';
 
 const DetailItem: React.FC<{icon: string, label: string, value?: string, href?: string}> = ({icon, label, value, href}) => {
     if (!value) return null;
@@ -35,9 +35,8 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
         if (!business) return;
         setIsSharing(true);
     
-        const baseUrl = window.location.origin;
-        const slug = createSlug(business.shopName);
-        const shareUrl = `${baseUrl}/business/${slug}/${business.id}`;
+        const baseUrl = `${window.location.origin}${window.location.pathname}`;
+        const shareUrl = `${baseUrl}?businessId=${business.id}`;
     
         const details = [
             `*${business.shopName}*`,
