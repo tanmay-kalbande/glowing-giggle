@@ -1,6 +1,7 @@
 import React from 'react';
 import { Business } from '../types';
 import { formatPhoneNumber } from '@/utils';
+import StarRating from './common/StarRating';
 
 interface BusinessCardProps {
     business: Business;
@@ -21,7 +22,15 @@ const BusinessCard: React.FC<BusinessCardProps> = ({ business, onViewDetails }) 
             <div className="flex justify-between items-start gap-4">
                 {/* Left side: Info */}
                 <div className="flex-grow min-w-0">
-                    <h4 className="font-inter text-lg font-bold text-primary pr-16 truncate group-hover:whitespace-normal" title={business.shopName}>{business.shopName}</h4>
+                    <div className="flex items-center justify-between">
+                         <h4 className="font-inter text-lg font-bold text-primary pr-4 truncate group-hover:whitespace-normal" title={business.shopName}>{business.shopName}</h4>
+                         {business.ratingCount && business.ratingCount > 0 && (
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                                <span className="font-bold text-yellow-500 text-sm">{(business.avgRating || 0).toFixed(1)}</span>
+                                <i className="fas fa-star text-yellow-500 text-sm"></i>
+                            </div>
+                         )}
+                    </div>
                     <div className="mt-2 space-y-1.5 text-text-secondary">
                         <p className="flex items-center gap-3">
                             <i className="fas fa-user w-4 text-center text-gray-400"></i>
