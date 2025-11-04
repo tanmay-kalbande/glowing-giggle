@@ -28,9 +28,9 @@ export interface DbBusiness {
   home_delivery?: boolean;
   payment_options?: string[];
   created_at?: string;
-  updated_at?: string;
-  created_by?: string;
-  updated_by?: string;
+  // These fields come from the RPC call
+  avg_rating?: number;
+  rating_count?: number;
 }
 
 // ============================================
@@ -49,6 +49,9 @@ export const dbBusinessToBusiness = (db: DbBusiness): Business => ({
   services: db.services || [],
   homeDelivery: db.home_delivery || false,
   paymentOptions: db.payment_options || [],
+  avgRating: db.avg_rating,
+  ratingCount: db.rating_count,
+  createdAt: db.created_at,
 });
 
 // Convert App format (camelCase) to DB format (snake_case)
@@ -77,7 +80,6 @@ export const signIn = async (email: string, password: string) => {
   
   if (error) throw error;
   
-  // Check if user is admin
   const { data: adminProfile, error: adminError } = await supabase
     .from('admin_profiles')
     .select('*')
@@ -131,14 +133,27 @@ export const fetchCategories = async (): Promise<Category[]> => {
 // ============================================
 
 export const fetchBusinesses = async (): Promise<Business[]> => {
-  const { data, error } = await supabase
+  // Use an RPC call to a Postgres function to get businesses with aggregated ratings
+  // This is more efficient than fetching all ratings and calculating on the client.
+  const { data, error } = await supabase.rpc('get_businesses_with_ratings');
+  
+  if (error) {
+    console.error("Error fetching businesses with ratings:", error);
+    // Fallback to fetching businesses without ratings if RPC fails
+    return fetchBusinessesWithoutRatings();
+  }
+  return (data || []).map(dbBusinessToBusiness);
+};
+
+const fetchBusinessesWithoutRatings = async (): Promise<Business[]> => {
+    const { data, error } = await supabase
     .from('businesses')
     .select('*')
     .order('shop_name', { ascending: true });
   
   if (error) throw error;
   return (data || []).map(dbBusinessToBusiness);
-};
+}
 
 export const addBusiness = async (business: Business): Promise<Business> => {
   const dbBusiness = businessToDbBusiness(business);
@@ -178,6 +193,35 @@ export const deleteBusiness = async (businessId: string): Promise<void> => {
 };
 
 // ============================================
+// RATING FUNCTIONS
+// ============================================
+
+interface AddRatingPayload {
+  businessId: string;
+  rating: number;
+  deviceId: string;
+}
+
+export const addBusinessRating = async ({ businessId, rating, deviceId }: AddRatingPayload) => {
+    const { data, error } = await supabase
+        .from('business_ratings')
+        .insert([
+            { business_id: businessId, rating, device_id: deviceId }
+        ]);
+
+    if (error) {
+        console.error("Error adding rating:", error);
+        // If the error is due to a unique constraint violation, it means the user already rated.
+        if (error.code === '23505') {
+            throw new Error('You have already rated this business from this device.');
+        }
+        throw error;
+    }
+    return data;
+};
+
+
+// ============================================
 // Data Version/Sync Functions
 // ============================================
 
@@ -188,18 +232,32 @@ export const getDataVersion = async (): Promise<DataVersion> => {
       .select('*', { count: 'exact', head: true });
     if (countError) throw countError;
     
-    const { data, error: updateError } = await supabase
+    // Check last update on both businesses and ratings table
+    const { data: businessUpdate, error: businessError } = await supabase
       .from('businesses')
       .select('updated_at')
       .order('updated_at', { ascending: false })
       .limit(1)
       .single();
+      
+    const { data: ratingUpdate, error: ratingError } = await supabase
+      .from('business_ratings')
+      .select('created_at')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (businessError && businessError.code !== 'PGRST116') throw businessError;
+    if (ratingError && ratingError.code !== 'PGRST116') throw ratingError;
     
-    if (updateError && updateError.code !== 'PGRST116') throw updateError;
+    const lastBusinessUpdate = businessUpdate ? new Date(businessUpdate.updated_at) : new Date(0);
+    const lastRatingUpdate = ratingUpdate ? new Date(ratingUpdate.created_at) : new Date(0);
     
+    const last_updated = lastBusinessUpdate > lastRatingUpdate ? lastBusinessUpdate.toISOString() : lastRatingUpdate.toISOString();
+
     return {
       business_count: count || 0,
-      last_updated: data?.updated_at || new Date().toISOString(),
+      last_updated,
       last_sync: 0,
     };
   } catch (error) {
@@ -220,10 +278,15 @@ export const subscribeToBusinessChanges = (
   callback: (payload: any) => void
 ) => {
   return supabase
-    .channel('businesses-changes')
+    .channel('public-changes')
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'businesses' },
+      callback
+    )
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'business_ratings' },
       callback
     )
     .subscribe();
