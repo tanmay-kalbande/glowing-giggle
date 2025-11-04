@@ -1,3 +1,4 @@
+// utils.ts - Updated with name management
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -15,6 +16,8 @@ export const formatPhoneNumber = (phoneNumber: string): string => {
 
 const DEVICE_ID_KEY = 'jawala-device-id';
 const RATED_BUSINESSES_KEY = 'jawala-rated-businesses';
+const USER_NAME_KEY = 'jawala-user-name'; // NEW: Store user name
+const NAME_PROMPTED_KEY = 'jawala-name-prompted'; // NEW: Track if we've asked for name
 
 /**
  * Gets or creates a unique anonymous ID for the user's device.
@@ -52,4 +55,46 @@ export const markAsRated = (businessId: string): void => {
         ratedIds.push(businessId);
         localStorage.setItem(RATED_BUSINESSES_KEY, JSON.stringify(ratedIds));
     }
+};
+
+// --- NEW: Name Management Functions ---
+
+/**
+ * Gets the stored user name if available
+ * @returns {string | null} The user's name or null if not set
+ */
+export const getUserName = (): string | null => {
+    return localStorage.getItem(USER_NAME_KEY);
+};
+
+/**
+ * Saves the user's name to local storage
+ * @param {string} name The user's name to save
+ */
+export const setUserName = (name: string): void => {
+    localStorage.setItem(USER_NAME_KEY, name);
+    localStorage.setItem(NAME_PROMPTED_KEY, 'true');
+};
+
+/**
+ * Checks if we've already prompted the user for their name
+ * @returns {boolean} True if we've already asked
+ */
+export const hasBeenPromptedForName = (): boolean => {
+    return localStorage.getItem(NAME_PROMPTED_KEY) === 'true';
+};
+
+/**
+ * Marks that we've prompted the user for name (even if they skipped)
+ */
+export const markNamePrompted = (): void => {
+    localStorage.setItem(NAME_PROMPTED_KEY, 'true');
+};
+
+/**
+ * Clears the user's name (for settings/reset)
+ */
+export const clearUserName = (): void => {
+    localStorage.removeItem(USER_NAME_KEY);
+    localStorage.removeItem(NAME_PROMPTED_KEY);
 };
