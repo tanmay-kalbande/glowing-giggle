@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Business, Category } from './types';
 import { User } from '@supabase/supabase-js';
@@ -52,8 +51,25 @@ const App: React.FC = () => {
                     categories: await SupabaseService.fetchCategories()
                 })
             );
+
             setBusinesses(result.businesses);
             setCategories(result.categories);
+            
+            // Check for shared business in URL after data is loaded
+            const params = new URLSearchParams(window.location.search);
+            const businessId = params.get('businessId');
+            if (businessId) {
+                const businessToView = result.businesses.find(b => b.id === businessId);
+                if (businessToView) {
+                    // Use a timeout to ensure the UI is ready
+                    setTimeout(() => {
+                        setSelectedBusiness(businessToView);
+                        // Clean the URL
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                    }, 100);
+                }
+            }
+
         } catch (error) {
             console.error("Failed to load data:", error);
         } finally {
@@ -76,10 +92,9 @@ const App: React.FC = () => {
         const handler = (e: Event) => {
             e.preventDefault();
             setDeferredPrompt(e);
-            setIsInstallable(true);
             const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
             if (!isStandalone) {
-              setShowInstallPrompt(true);
+                setIsInstallable(true);
             }
         };
         window.addEventListener('beforeinstallprompt', handler);
@@ -104,11 +119,20 @@ const App: React.FC = () => {
     
     const filteredBusinesses = useMemo(() => {
       let result = businesses;
+      if (searchQuery) {
+        const lowerCaseQuery = searchQuery.toLowerCase();
+        return businesses.filter(business =>
+            business.shopName.toLowerCase().includes(lowerCaseQuery) ||
+            business.ownerName.toLowerCase().includes(lowerCaseQuery) ||
+            business.contactNumber.includes(lowerCaseQuery) ||
+            (business.services && business.services.some(s => s.toLowerCase().includes(lowerCaseQuery)))
+        );
+      }
       if (selectedCategory) {
           result = result.filter(b => b.category === selectedCategory);
       }
       return result;
-    }, [businesses, selectedCategory]);
+    }, [businesses, selectedCategory, searchQuery]);
 
     const handleCategorySelect = (id: string | null) => {
         setSelectedCategory(id);
@@ -152,12 +176,14 @@ const App: React.FC = () => {
     };
 
     const handleInstallClick = async () => {
-        if (!deferredPrompt) return;
+        if (!deferredPrompt) {
+            setShowInstallPrompt(true); // Show iOS prompt if no deferred prompt
+            return;
+        }
         deferredPrompt.prompt();
         await deferredPrompt.userChoice;
         setDeferredPrompt(null);
         setIsInstallable(false);
-        setShowInstallPrompt(false);
     };
 
     if (isLoading && businesses.length === 0) {
@@ -176,17 +202,21 @@ const App: React.FC = () => {
                        query={searchQuery}
                        onQueryChange={setSearchQuery}
                    />
-                    {selectedCategory && (
-                        <button onClick={() => handleCategorySelect(null)} className="mb-4 flex items-center gap-2 text-primary font-semibold hover:underline">
-                            <i className="fas fa-arrow-left"></i> सर्व श्रेण्या पहा
-                        </button>
+                    {!searchQuery && (
+                        <>
+                            {selectedCategory && (
+                                <button onClick={() => handleCategorySelect(null)} className="mb-4 flex items-center gap-2 text-primary font-semibold hover:underline">
+                                    <i className="fas fa-arrow-left"></i> सर्व श्रेण्या पहा
+                                </button>
+                            )}
+                            <CategoryGrid 
+                                categories={categories}
+                                businessCounts={businessCounts}
+                                selectedCategory={selectedCategory}
+                                onCategorySelect={handleCategorySelect}
+                            />
+                        </>
                     )}
-                    <CategoryGrid 
-                        categories={categories}
-                        businessCounts={businessCounts}
-                        selectedCategory={selectedCategory}
-                        onCategorySelect={handleCategorySelect}
-                    />
                     <div className="mt-8">
                         <BusinessList 
                             businesses={filteredBusinesses} 
@@ -216,7 +246,11 @@ const App: React.FC = () => {
             {user && isBusinessFormOpen && (
                 <BusinessForm 
                     categories={categories} 
-                    onClose={() => { setIsBusinessFormOpen(false); setEditingBusiness(null); }} 
+                    onClose={() => { 
+                        setIsBusinessFormOpen(false); 
+                        setEditingBusiness(null); 
+                        if (editingBusiness) setIsEditListOpen(true); // Go back to edit list if we were editing
+                    }} 
                     onSave={handleSaveBusiness} 
                     existingBusiness={editingBusiness}
                     isSaving={isSaving}
@@ -233,7 +267,7 @@ const App: React.FC = () => {
                 />
             )}
             
-            {showInstallPrompt && <InstallPrompt onInstall={handleInstallClick} onDismiss={() => setShowInstallPrompt(false)} />}
+            <InstallPrompt onDismiss={() => setShowInstallPrompt(false)} show={showInstallPrompt} />
         </div>
     );
 };
