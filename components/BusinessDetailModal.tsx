@@ -96,7 +96,7 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
                 <main className="p-4 space-y-3 overflow-y-auto">
                     <InfoCard>
                         <a href={`tel:${business.contactNumber}`} className="flex items-start gap-4 group">
-                             <i className="fas fa-phone-alt w-5 text-center text-secondary text-lg pt-1 group-hover:text-primary transition-colors"></i>
+                            <i className="fas fa-phone-alt w-5 text-center text-secondary text-lg pt-1 group-hover:text-primary transition-colors"></i>
                             <div>
                                 <p className="font-semibold text-text-secondary text-sm">संपर्क</p>
                                 <p className="text-lg text-primary font-bold tracking-wider group-hover:underline">{formatPhoneNumber(business.contactNumber)}</p>
