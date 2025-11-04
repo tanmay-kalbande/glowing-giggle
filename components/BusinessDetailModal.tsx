@@ -38,36 +38,98 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
     const [isSharing, setIsSharing] = useState(false);
     const [userHasRated, setUserHasRated] = useState(false);
     const [isSubmittingRating, setIsSubmittingRating] = useState(false);
-    const [ratingMessage, setRatingMessage] = useState('');
+    const [ratingMessage, setRatingMessage] = useState<{text: string, type: 'success' | 'error'} | null>(null);
+    const [currentRating, setCurrentRating] = useState(0);
+    const [hoverRating, setHoverRating] = useState(0);
+    const [isCheckingRatingStatus, setIsCheckingRatingStatus] = useState(true);
 
     useEffect(() => {
-        if (business) {
-            setUserHasRated(hasRated(business.id));
-        }
+        const checkRatingStatus = async () => {
+            if (!business) return;
+            
+            setIsCheckingRatingStatus(true);
+            
+            // Check local storage first (fast)
+            const localCheck = hasRated(business.id);
+            setUserHasRated(localCheck);
+            
+            // Then verify with server (authoritative)
+            try {
+                const deviceId = getDeviceId();
+                const serverCheck = await SupabaseService.hasDeviceRated(business.id, deviceId);
+                
+                if (serverCheck !== localCheck) {
+                    // Sync local storage with server state
+                    if (serverCheck) {
+                        markAsRated(business.id);
+                    }
+                    setUserHasRated(serverCheck);
+                }
+            } catch (error) {
+                console.error('Error checking rating status:', error);
+                // Use local check as fallback
+            } finally {
+                setIsCheckingRatingStatus(false);
+            }
+        };
+        
+        checkRatingStatus();
+        setCurrentRating(business?.avgRating || 0);
     }, [business]);
 
     const handleRatingSubmit = async (rating: number) => {
-        if (!business) return;
+        if (!business || userHasRated || isSubmittingRating) return;
+        
         setIsSubmittingRating(true);
-        setRatingMessage('');
+        setRatingMessage(null);
+        
         try {
-            await SupabaseService.addBusinessRating({
+            const result = await SupabaseService.addBusinessRating({
                 businessId: business.id,
                 rating,
                 deviceId: getDeviceId(),
             });
+            
+            // Mark as rated locally
             markAsRated(business.id);
             setUserHasRated(true);
-            setRatingMessage('तुमचे रेटिंग स्वीकारले आहे, धन्यवाद!');
-            onRatingSubmitted(business.id, rating); // Notify parent to optimistically update
+            
+            // Update local state with new rating stats
+            if (result.newAvgRating !== undefined) {
+                setCurrentRating(result.newAvgRating);
+            }
+            
+            // Show success message
+            setRatingMessage({
+                text: result.message || 'तुमचे रेटिंग स्वीकारले आहे, धन्यवाद!',
+                type: 'success'
+            });
+            
+            // Notify parent component
+            onRatingSubmitted(business.id, rating);
+            
+            // Clear success message after 3 seconds
+            setTimeout(() => setRatingMessage(null), 3000);
+            
         } catch (error: any) {
             console.error("Failed to submit rating", error);
-            setRatingMessage(error.message || 'रेटिंग सबमिट करताना त्रुटी आली.');
-            // If server says we've already rated, sync local storage
-            if (error.message.includes('already rated')) {
+            
+            // Show error message
+            const errorText = error.message || 'रेटिंग सबमिट करताना त्रुटी आली. कृपया पुन्हा प्रयत्न करा.';
+            setRatingMessage({
+                text: errorText,
+                type: 'error'
+            });
+            
+            // If server says already rated, sync local state
+            if (error.message && error.message.includes('आधीच')) {
                 markAsRated(business.id);
                 setUserHasRated(true);
             }
+            
+            // Clear error message after 5 seconds
+            setTimeout(() => setRatingMessage(null), 5000);
+            
         } finally {
             setIsSubmittingRating(false);
         }
@@ -101,12 +163,14 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
     if (!business) return null;
     
     const mapUrl = business.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}` : undefined;
+    const displayRating = currentRating || business.avgRating || 0;
+    const displayCount = business.ratingCount || 0;
 
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 animate-fadeInUp" style={{animationDuration: '0.3s'}} onClick={onClose}>
             <div className="bg-background rounded-xl shadow-xl w-11/12 max-w-md m-4 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
                 <header className="bg-secondary p-5 rounded-t-xl text-white relative">
-                    <button onClick={onClose} className="absolute top-2 right-2 text-white/70 hover:text-white text-3xl w-8 h-8 flex items-center justify-center">&times;</button>
+                    <button onClick={onClose} className="absolute top-2 right-2 text-white/70 hover:text-white text-3xl w-8 h-8 flex items-center justify-center transition-colors">&times;</button>
                     <h3 className="font-inter text-2xl font-bold">{business.shopName}</h3>
                     <p className="opacity-90 text-base">{business.ownerName}</p>
                 </header>
@@ -124,18 +188,53 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
 
                     <InfoCard>
                         <div className="flex flex-col items-center">
-                            <p className="font-bold text-text-primary mb-2">{userHasRated ? 'सरासरी रेटिंग' : 'या व्यवसायाला रेट करा'}</p>
-                            <StarRating 
-                                rating={business.avgRating || 0} 
-                                onRatingChange={handleRatingSubmit} 
-                                disabled={userHasRated || isSubmittingRating}
-                                size="lg"
-                            />
-                            {business.ratingCount && business.ratingCount > 0 && (
-                                <p className="text-sm text-text-secondary mt-1">({business.ratingCount} रेटिंग)</p>
+                            {isCheckingRatingStatus ? (
+                                <div className="py-4">
+                                    <i className="fas fa-spinner fa-spin text-2xl text-primary"></i>
+                                    <p className="text-sm text-text-secondary mt-2">रेटिंग स्थिती तपासत आहे...</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <p className="font-bold text-text-primary mb-2">
+                                        {userHasRated ? '⭐ तुम्ही रेट केले आहे' : 'या व्यवसायाला रेट करा'}
+                                    </p>
+                                    <div className="relative">
+                                        <StarRating 
+                                            rating={displayRating} 
+                                            onRatingChange={handleRatingSubmit} 
+                                            disabled={userHasRated || isSubmittingRating || isCheckingRatingStatus}
+                                            size="lg"
+                                        />
+                                        {!userHasRated && !isSubmittingRating && (
+                                            <p className="text-xs text-text-secondary mt-1 text-center">
+                                                ⭐ पर क्लिक करून रेट करा
+                                            </p>
+                                        )}
+                                    </div>
+                                    {displayCount > 0 && (
+                                        <p className="text-sm text-text-secondary mt-2">
+                                            <span className="font-bold">{displayRating.toFixed(1)}</span> / 5.0 ({displayCount} रेटिंग)
+                                        </p>
+                                    )}
+                                    {isSubmittingRating && (
+                                        <div className="flex items-center gap-2 mt-2">
+                                            <i className="fas fa-spinner fa-spin text-primary"></i>
+                                            <p className="text-sm text-primary animate-pulse">रेटिंग सबमिट करत आहे...</p>
+                                        </div>
+                                    )}
+                                    {ratingMessage && (
+                                        <div className={`mt-3 p-3 rounded-lg text-sm font-semibold text-center ${
+                                            ratingMessage.type === 'success' 
+                                                ? 'bg-green-50 text-green-700 border border-green-200' 
+                                                : 'bg-red-50 text-red-700 border border-red-200'
+                                        }`}>
+                                            {ratingMessage.type === 'success' && '✓ '}
+                                            {ratingMessage.type === 'error' && '⚠ '}
+                                            {ratingMessage.text}
+                                        </div>
+                                    )}
+                                </>
                             )}
-                            {isSubmittingRating && <p className="text-sm text-primary mt-2 animate-pulse">रेटिंग सबमिट करत आहे...</p>}
-                            {ratingMessage && <p className={`text-sm mt-2 font-semibold ${ratingMessage.includes('धन्यवाद') ? 'text-green-600' : 'text-red-600'}`}>{ratingMessage}</p>}
                         </div>
                     </InfoCard>
 
