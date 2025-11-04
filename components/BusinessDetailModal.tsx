@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Business } from '../types';
-import { formatPhoneNumber } from '@/utils';
+import { formatPhoneNumber, getDeviceId, hasRated, markAsRated } from '@/utils';
+import * as SupabaseService from '../supabaseClient';
+import StarRating from './common/StarRating';
 
 const InfoCard: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     <div className="bg-surface rounded-lg shadow-subtle p-5 space-y-4">
@@ -10,9 +12,7 @@ const InfoCard: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 const InfoItem: React.FC<{ icon: string; label: string; value?: string | React.ReactNode; href?: string; isHighlight?: boolean }> = ({ icon, label, value, href, isHighlight }) => {
     if (!value) return null;
-
     const valueClasses = `text-text-secondary ${isHighlight ? 'font-bold text-green-700' : ''}`;
-
     return (
         <div className="flex items-start gap-4">
             <i className={`fas ${icon} w-5 text-center text-secondary text-lg pt-1`}></i>
@@ -28,55 +28,73 @@ const InfoItem: React.FC<{ icon: string; label: string; value?: string | React.R
     );
 };
 
-
 interface BusinessDetailModalProps {
     business: Business | null;
     onClose: () => void;
+    onRatingSubmitted: (businessId: string, newRating: number) => void;
 }
 
-const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onClose }) => {
+const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onClose, onRatingSubmitted }) => {
     const [isSharing, setIsSharing] = useState(false);
+    const [userHasRated, setUserHasRated] = useState(false);
+    const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+    const [ratingMessage, setRatingMessage] = useState('');
+
+    useEffect(() => {
+        if (business) {
+            setUserHasRated(hasRated(business.id));
+        }
+    }, [business]);
+
+    const handleRatingSubmit = async (rating: number) => {
+        if (!business) return;
+        setIsSubmittingRating(true);
+        setRatingMessage('');
+        try {
+            await SupabaseService.addBusinessRating({
+                businessId: business.id,
+                rating,
+                deviceId: getDeviceId(),
+            });
+            markAsRated(business.id);
+            setUserHasRated(true);
+            setRatingMessage('तुमचे रेटिंग स्वीकारले आहे, धन्यवाद!');
+            onRatingSubmitted(business.id, rating); // Notify parent to optimistically update
+        } catch (error: any) {
+            console.error("Failed to submit rating", error);
+            setRatingMessage(error.message || 'रेटिंग सबमिट करताना त्रुटी आली.');
+            // If server says we've already rated, sync local storage
+            if (error.message.includes('already rated')) {
+                markAsRated(business.id);
+                setUserHasRated(true);
+            }
+        } finally {
+            setIsSubmittingRating(false);
+        }
+    };
 
     const shareBusinessDetails = async () => {
         if (!business) return;
         setIsSharing(true);
-    
         const baseUrl = `${window.location.origin}${window.location.pathname}`;
         const shareUrl = `${baseUrl}?businessId=${business.id}`;
-    
-        const details = [
-            `*${business.shopName}*`,
-            `👤 ${business.ownerName}`,
-            `📞 ${formatPhoneNumber(business.contactNumber)}`,
-        ];
-    
+        const details = [`*${business.shopName}*`, `👤 ${business.ownerName}`, `📞 ${formatPhoneNumber(business.contactNumber)}`];
         if (business.address) details.push(`📍 ${business.address}`);
         if (business.services && business.services.length > 0) details.push(`🛠️ सेवा: ${business.services.join(', ')}`);
-        
         details.push(`\n_~ जवळा व्यवसाय निर्देशिका द्वारे पाठवले ~_`);
         const shareText = details.join('\n');
         
-        if (navigator.share) {
-            try {
-                await navigator.share({
-                    title: `${business.shopName} | जवळा व्यवसाय निर्देशिका`,
-                    text: shareText, 
-                    url: shareUrl,
-                });
-            } catch (error) {
-                console.error('Sharing failed:', error);
-            } finally {
-                setIsSharing(false);
-            }
-        } else {
-            try {
+        try {
+            if (navigator.share) {
+                await navigator.share({ title: `${business.shopName} | जवळा व्यवसाय निर्देशिका`, text: shareText, url: shareUrl });
+            } else {
                 await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
                 alert('शेअरिंग समर्थित नाही. तपशील आणि लिंक क्लिपबोर्डवर कॉपी केली आहे!');
-            } catch (err) {
-                alert('तपशील कॉपी करू शकलो नाही.');
-            } finally {
-                setIsSharing(false);
             }
+        } catch (error) {
+            console.error('Sharing failed:', error);
+        } finally {
+            setIsSharing(false);
         }
     };
     
@@ -102,6 +120,23 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
                                 <p className="text-lg text-primary font-bold tracking-wider group-hover:underline">{formatPhoneNumber(business.contactNumber)}</p>
                             </div>
                         </a>
+                    </InfoCard>
+
+                    <InfoCard>
+                        <div className="flex flex-col items-center">
+                            <p className="font-bold text-text-primary mb-2">{userHasRated ? 'सरासरी रेटिंग' : 'या व्यवसायाला रेट करा'}</p>
+                            <StarRating 
+                                rating={business.avgRating || 0} 
+                                onRatingChange={handleRatingSubmit} 
+                                disabled={userHasRated || isSubmittingRating}
+                                size="lg"
+                            />
+                            {business.ratingCount && business.ratingCount > 0 && (
+                                <p className="text-sm text-text-secondary mt-1">({business.ratingCount} रेटिंग)</p>
+                            )}
+                            {isSubmittingRating && <p className="text-sm text-primary mt-2 animate-pulse">रेटिंग सबमिट करत आहे...</p>}
+                            {ratingMessage && <p className={`text-sm mt-2 font-semibold ${ratingMessage.includes('धन्यवाद') ? 'text-green-600' : 'text-red-600'}`}>{ratingMessage}</p>}
+                        </div>
                     </InfoCard>
 
                     {(business.address || business.openingHours || business.homeDelivery) && (
