@@ -1,23 +1,27 @@
-
 import React, { useState } from 'react';
 import { Business } from '../types';
+import { formatPhoneNumber, createSlug } from '../utils';
 
-const formatPhoneNumber = (phoneNumber: string): string => {
-    if (phoneNumber.length === 10) {
-        return `+91 ${phoneNumber.slice(0, 5)} ${phoneNumber.slice(5)}`;
-    }
-    return phoneNumber;
+const DetailItem: React.FC<{icon: string, label: string, value?: string, href?: string}> = ({icon, label, value, href}) => {
+    if (!value) return null;
+
+    const content = href ? (
+        <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{value}</a>
+    ) : (
+        <p className="text-text-secondary">{value}</p>
+    );
+
+    return (
+        <div className="flex items-start gap-4">
+            <i className={`fas ${icon} w-6 text-center text-secondary text-xl pt-1`}></i>
+            <div>
+                <p className="font-semibold text-text-primary">{label}</p>
+                {content}
+            </div>
+        </div>
+    );
 };
 
-const DetailItem: React.FC<{icon: string, label: string, value?: string}> = ({icon, label, value}) => (
-    value ? <div className="flex items-start gap-4">
-        <i className={`fas ${icon} w-6 text-center text-secondary text-xl pt-1`}></i>
-        <div>
-            <p className="font-semibold text-text-primary">{label}</p>
-            <p className="text-text-secondary">{value}</p>
-        </div>
-    </div> : null
-);
 
 interface BusinessDetailModalProps {
     business: Business | null;
@@ -31,8 +35,9 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
         if (!business) return;
         setIsSharing(true);
     
-        const baseUrl = `${window.location.origin}${window.location.pathname}`;
-        const shareUrl = `${baseUrl}?businessId=${business.id}`;
+        const baseUrl = window.location.origin;
+        const slug = createSlug(business.shopName);
+        const shareUrl = `${baseUrl}/business/${slug}/${business.id}`;
     
         const details = [
             `*${business.shopName}*`,
@@ -77,6 +82,7 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
     };
     
     const hasExtraDetails = business.address || business.openingHours || business.homeDelivery;
+    const mapUrl = business.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}` : undefined;
 
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 animate-fadeInUp" style={{animationDuration: '0.3s'}} onClick={onClose}>
@@ -98,7 +104,7 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
 
                     {hasExtraDetails && (
                       <div className="p-4 bg-surface rounded-lg shadow-subtle space-y-4">
-                          <DetailItem icon="fa-map-marker-alt" label="पत्ता" value={business.address} />
+                          <DetailItem icon="fa-map-marker-alt" label="पत्ता" value={business.address} href={mapUrl} />
                           <DetailItem icon="fa-clock" label="वेळ" value={business.openingHours} />
                           {business.homeDelivery && 
                               <div className="flex items-center gap-4">
