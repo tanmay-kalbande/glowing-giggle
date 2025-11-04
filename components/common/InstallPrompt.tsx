@@ -1,27 +1,45 @@
-
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface InstallPromptProps {
-    onInstall: () => void;
+    show: boolean;
     onDismiss: () => void;
 }
 
-const InstallPrompt: React.FC<InstallPromptProps> = ({ onInstall, onDismiss }) => {
+const InstallPrompt: React.FC<InstallPromptProps> = ({ show, onDismiss }) => {
+    const [isVisible, setIsVisible] = useState(false);
+    
+    // Check if the user is on an iOS device
+    const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    
+    useEffect(() => {
+        // Only show for iOS if it hasn't been dismissed before
+        if (isIOS() && show) {
+            const dismissed = localStorage.getItem('iosInstallPromptDismissed');
+            if (!dismissed) {
+                setIsVisible(true);
+            }
+        }
+    }, [show]);
+
+    const handleDismiss = () => {
+        localStorage.setItem('iosInstallPromptDismissed', 'true');
+        setIsVisible(false);
+        onDismiss();
+    };
+
+    if (!isVisible || !isIOS()) {
+        return null;
+    }
+
     return (
         <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-br from-primary to-secondary text-white p-4 z-50 animate-fadeInUp flex items-center justify-center gap-4 shadow-lg">
             <div className="flex-grow text-center sm:text-left">
                 <p className="font-bold">तुमच्या होम स्क्रीनवर ॲप ইনস্টল करा!</p>
-                <p className="text-sm opacity-90">जलद प्रवेशासाठी आणि उत्तम अनुभवासाठी.</p>
+                <p className="text-sm opacity-90">खालील शेअर बटण <i className="fas fa-share-square"></i> टॅप करा आणि 'Add to Home Screen' निवडा.</p>
             </div>
             <div className="flex items-center gap-3 flex-shrink-0">
                 <button 
-                    onClick={onInstall}
-                    className="bg-white text-primary font-bold py-2 px-5 rounded-full hover:bg-gray-200 transition-colors"
-                >
-                    इंस्टॉल करा
-                </button>
-                <button 
-                    onClick={onDismiss}
+                    onClick={handleDismiss}
                     className="text-white/80 hover:text-white"
                     aria-label="Dismiss"
                 >
