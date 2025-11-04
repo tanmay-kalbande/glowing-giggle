@@ -1,8 +1,10 @@
+// components/BusinessDetailModal.tsx - Updated with Name Prompt
 import React, { useState, useEffect } from 'react';
 import { Business } from '../types';
-import { formatPhoneNumber, getDeviceId, hasRated, markAsRated } from '@/utils';
+import { formatPhoneNumber, getDeviceId, hasRated, markAsRated, getUserName, hasBeenPromptedForName, setUserName, markNamePrompted } from '@/utils';
 import * as SupabaseService from '../supabaseClient';
 import StarRating from './common/StarRating';
+import NamePromptModal from './common/NamePromptModal';
 
 const InfoCard: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     <div className="bg-surface rounded-lg shadow-subtle p-5 space-y-4">
@@ -40,12 +42,16 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
     const [isSubmittingRating, setIsSubmittingRating] = useState(false);
     const [ratingMessage, setRatingMessage] = useState<{text: string, type: 'success' | 'error'} | null>(null);
     
+    // NEW: Name prompt state
+    const [showNamePrompt, setShowNamePrompt] = useState(false);
+    const [userName, setUserNameState] = useState<string | null>(null);
+    
     // Local state for ratings - always visible
     const [displayRating, setDisplayRating] = useState(0);
     const [displayCount, setDisplayCount] = useState(0);
     const [isLoadingRatings, setIsLoadingRatings] = useState(true);
 
-    // Load rating data whenever business changes
+    // Load rating data and check name whenever business changes
     useEffect(() => {
         const loadRatingData = async () => {
             if (!business) return;
@@ -56,6 +62,10 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
                 // Check if user has rated (local check first for speed)
                 const localCheck = hasRated(business.id);
                 setUserHasRated(localCheck);
+                
+                // Get user name if available
+                const storedName = getUserName();
+                setUserNameState(storedName);
                 
                 // Fetch fresh rating statistics from server
                 const stats = await SupabaseService.getBusinessRatingStats(business.id);
@@ -75,6 +85,12 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
                         setUserHasRated(serverCheck);
                     }
                 }
+                
+                // NEW: Show name prompt if they haven't been asked and haven't rated
+                if (!localCheck && !hasBeenPromptedForName()) {
+                    setShowNamePrompt(true);
+                }
+                
             } catch (error) {
                 console.error('Error loading rating data:', error);
                 // Fallback to business prop data
@@ -88,6 +104,19 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
         loadRatingData();
     }, [business]);
 
+    // NEW: Handle name submission
+    const handleNameSubmit = (name: string) => {
+        setUserName(name);
+        setUserNameState(name);
+        setShowNamePrompt(false);
+    };
+
+    // NEW: Handle name prompt skip
+    const handleNameSkip = () => {
+        markNamePrompted(); // Remember we asked
+        setShowNamePrompt(false);
+    };
+
     const handleRatingSubmit = async (rating: number) => {
         if (!business || userHasRated || isSubmittingRating) return;
         
@@ -99,6 +128,7 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
                 businessId: business.id,
                 rating,
                 deviceId: getDeviceId(),
+                userName: userName || undefined, // NEW: Include user name if available
             });
             
             // Mark as rated locally
@@ -182,125 +212,143 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
     const mapUrl = business.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}` : undefined;
 
     return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 animate-fadeInUp" style={{animationDuration: '0.3s'}} onClick={onClose}>
-            <div className="bg-background rounded-xl shadow-xl w-11/12 max-w-md m-4 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-                <header className="bg-secondary p-5 rounded-t-xl text-white relative">
-                    <button onClick={onClose} className="absolute top-2 right-2 text-white/70 hover:text-white text-3xl w-8 h-8 flex items-center justify-center transition-colors">&times;</button>
-                    <h3 className="font-inter text-2xl font-bold">{business.shopName}</h3>
-                    <p className="opacity-90 text-base">{business.ownerName}</p>
-                </header>
+        <>
+            {/* NEW: Name Prompt Modal */}
+            {showNamePrompt && (
+                <NamePromptModal 
+                    onNameSubmit={handleNameSubmit}
+                    onSkip={handleNameSkip}
+                />
+            )}
+            
+            {/* Main Business Detail Modal */}
+            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 animate-fadeInUp" style={{animationDuration: '0.3s'}} onClick={onClose}>
+                <div className="bg-background rounded-xl shadow-xl w-11/12 max-w-md m-4 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                    <header className="bg-secondary p-5 rounded-t-xl text-white relative">
+                        <button onClick={onClose} className="absolute top-2 right-2 text-white/70 hover:text-white text-3xl w-8 h-8 flex items-center justify-center transition-colors">&times;</button>
+                        <h3 className="font-inter text-2xl font-bold">{business.shopName}</h3>
+                        <p className="opacity-90 text-base">{business.ownerName}</p>
+                    </header>
 
-                <main className="p-4 space-y-3 overflow-y-auto">
-                    <InfoCard>
-                        <a href={`tel:${business.contactNumber}`} className="flex items-start gap-4 group">
-                            <i className="fas fa-phone-alt w-5 text-center text-secondary text-lg pt-1 group-hover:text-primary transition-colors"></i>
-                            <div>
-                                <p className="font-semibold text-text-secondary text-sm">संपर्क</p>
-                                <p className="text-lg text-primary font-bold tracking-wider group-hover:underline">{formatPhoneNumber(business.contactNumber)}</p>
-                            </div>
-                        </a>
-                    </InfoCard>
-
-                    <InfoCard>
-                        <div className="flex flex-col items-center">
-                            {isLoadingRatings ? (
-                                <div className="py-4">
-                                    <i className="fas fa-spinner fa-spin text-2xl text-primary"></i>
-                                    <p className="text-sm text-text-secondary mt-2">रेटिंग लोड करत आहे...</p>
+                    <main className="p-4 space-y-3 overflow-y-auto">
+                        <InfoCard>
+                            <a href={`tel:${business.contactNumber}`} className="flex items-start gap-4 group">
+                                <i className="fas fa-phone-alt w-5 text-center text-secondary text-lg pt-1 group-hover:text-primary transition-colors"></i>
+                                <div>
+                                    <p className="font-semibold text-text-secondary text-sm">संपर्क</p>
+                                    <p className="text-lg text-primary font-bold tracking-wider group-hover:underline">{formatPhoneNumber(business.contactNumber)}</p>
                                 </div>
-                            ) : (
-                                <>
-                                    {/* Always show current rating statistics */}
-                                    <div className="mb-3 text-center">
-                                        <p className="font-bold text-text-primary text-lg mb-1">
-                                            {displayCount > 0 ? `${displayRating.toFixed(1)} / 5.0` : 'अजून रेटिंग नाही'}
-                                        </p>
-                                        {displayCount > 0 && (
-                                            <p className="text-sm text-text-secondary">
-                                                ({displayCount} {displayCount === 1 ? 'रेटिंग' : 'रेटिंग्स'})
+                            </a>
+                        </InfoCard>
+
+                        <InfoCard>
+                            <div className="flex flex-col items-center">
+                                {isLoadingRatings ? (
+                                    <div className="py-4">
+                                        <i className="fas fa-spinner fa-spin text-2xl text-primary"></i>
+                                        <p className="text-sm text-text-secondary mt-2">रेटिंग लोड करत आहे...</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Always show current rating statistics */}
+                                        <div className="mb-3 text-center">
+                                            <p className="font-bold text-text-primary text-lg mb-1">
+                                                {displayCount > 0 ? `${displayRating.toFixed(1)} / 5.0` : 'अजून रेटिंग नाही'}
+                                            </p>
+                                            {displayCount > 0 && (
+                                                <p className="text-sm text-text-secondary">
+                                                    ({displayCount} {displayCount === 1 ? 'रेटिंग' : 'रेटिंग्स'})
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        {/* Star display - always visible */}
+                                        <div className="mb-3">
+                                            <StarRating 
+                                                rating={displayRating} 
+                                                onRatingChange={userHasRated ? undefined : handleRatingSubmit}
+                                                disabled={userHasRated || isSubmittingRating}
+                                                size="lg"
+                                            />
+                                        </div>
+
+                                        {/* NEW: Show user name if available */}
+                                        {userName && !userHasRated && (
+                                            <p className="text-xs text-text-secondary mb-2">
+                                                रेटिंग {userName} म्हणून दिली जाईल
                                             </p>
                                         )}
-                                    </div>
 
-                                    {/* Star display - always visible */}
-                                    <div className="mb-3">
-                                        <StarRating 
-                                            rating={displayRating} 
-                                            onRatingChange={userHasRated ? undefined : handleRatingSubmit}
-                                            disabled={userHasRated || isSubmittingRating}
-                                            size="lg"
-                                        />
-                                    </div>
+                                        {/* Rating status message */}
+                                        <p className="text-sm font-semibold text-center mb-2">
+                                            {userHasRated ? (
+                                                <span className="text-green-600 flex items-center justify-center gap-2">
+                                                    <i className="fas fa-check-circle"></i>
+                                                    तुम्ही रेट केले आहे
+                                                </span>
+                                            ) : (
+                                                <span className="text-primary">
+                                                    {isSubmittingRating ? 'रेटिंग सबमिट करत आहे...' : '⭐ पर क्लिक करून रेट करा'}
+                                                </span>
+                                            )}
+                                        </p>
 
-                                    {/* Rating status message */}
-                                    <p className="text-sm font-semibold text-center mb-2">
-                                        {userHasRated ? (
-                                            <span className="text-green-600 flex items-center justify-center gap-2">
-                                                <i className="fas fa-check-circle"></i>
-                                                तुम्ही रेट केले आहे
-                                            </span>
-                                        ) : (
-                                            <span className="text-primary">
-                                                {isSubmittingRating ? 'रेटिंग सबमिट करत आहे...' : '⭐ पर क्लिक करून रेट करा'}
-                                            </span>
+                                        {/* Loading indicator while submitting */}
+                                        {isSubmittingRating && (
+                                            <div className="flex items-center gap-2">
+                                                <i className="fas fa-spinner fa-spin text-primary"></i>
+                                                <p className="text-sm text-primary animate-pulse">कृपया प्रतीक्षा करा...</p>
+                                            </div>
                                         )}
-                                    </p>
 
-                                    {/* Loading indicator while submitting */}
-                                    {isSubmittingRating && (
-                                        <div className="flex items-center gap-2">
-                                            <i className="fas fa-spinner fa-spin text-primary"></i>
-                                            <p className="text-sm text-primary animate-pulse">कृपया प्रतीक्षा करा...</p>
-                                        </div>
-                                    )}
-
-                                    {/* Success/Error messages */}
-                                    {ratingMessage && (
-                                        <div className={`mt-3 p-3 rounded-lg text-sm font-semibold text-center animate-fadeInUp ${
-                                            ratingMessage.type === 'success' 
-                                                ? 'bg-green-50 text-green-700 border border-green-200' 
-                                                : 'bg-red-50 text-red-700 border border-red-200'
-                                        }`}>
-                                            {ratingMessage.type === 'success' && '✓ '}
-                                            {ratingMessage.type === 'error' && '⚠ '}
-                                            {ratingMessage.text}
-                                        </div>
-                                    )}
-                                </>
-                            )}
-                        </div>
-                    </InfoCard>
-
-                    {(business.address || business.openingHours || business.homeDelivery) && (
-                        <InfoCard>
-                            <InfoItem icon="fa-map-marker-alt" label="पत्ता" value={business.address} href={mapUrl} />
-                            <InfoItem icon="fa-clock" label="वेळ" value={business.openingHours} />
-                            {business.homeDelivery && 
-                                <InfoItem icon="fa-bicycle" label="होम डिलिव्हरी" value="उपलब्ध" isHighlight={true} />
-                            }
-                        </InfoCard>
-                    )}
-
-                    {business.services && business.services.length > 0 && 
-                        <InfoCard>
-                             <div>
-                                <h4 className="font-bold text-text-primary mb-3">सेवा/उत्पादने:</h4>
-                                <div className="flex flex-wrap gap-2">
-                                    {business.services.map(s => <span key={s} className="bg-secondary/20 text-secondary-dark text-sm font-semibold px-3 py-1 rounded-full">{s}</span>)}
-                                </div>
+                                        {/* Success/Error messages */}
+                                        {ratingMessage && (
+                                            <div className={`mt-3 p-3 rounded-lg text-sm font-semibold text-center animate-fadeInUp ${
+                                                ratingMessage.type === 'success' 
+                                                    ? 'bg-green-50 text-green-700 border border-green-200' 
+                                                    : 'bg-red-50 text-red-700 border border-red-200'
+                                            }`}>
+                                                {ratingMessage.type === 'success' && '✓ '}
+                                                {ratingMessage.type === 'error' && '⚠ '}
+                                                {ratingMessage.text}
+                                            </div>
+                                        )}
+                                    </>
+                                )}
                             </div>
                         </InfoCard>
-                    }
-                </main>
 
-                <footer className="p-3 border-t border-border-color grid grid-cols-2 gap-3 bg-background/70 rounded-b-xl">
-                    <a href={`https://wa.me/91${business.contactNumber}?text=${encodeURIComponent('नमस्कार, मी "जवळा व्यवसाय निर्देशिका" वरून आपला संपर्क घेतला आहे.')}`} target="_blank" rel="noopener noreferrer" className="w-full text-center py-3 rounded-lg transition-all flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold"><i className="fab fa-whatsapp text-xl"></i> WhatsApp</a>
-                    <button onClick={shareBusinessDetails} disabled={isSharing} className="w-full text-center py-3 rounded-lg transition-all flex items-center justify-center gap-2 bg-secondary hover:bg-secondary/90 text-white font-bold disabled:bg-gray-400">
-                        {isSharing ? <><i className="fas fa-spinner fa-spin"></i> शेअर करत आहे...</> : <><i className="fas fa-share text-xl"></i> शेअर करा</>}
-                    </button>
-                </footer>
+                        {(business.address || business.openingHours || business.homeDelivery) && (
+                            <InfoCard>
+                                <InfoItem icon="fa-map-marker-alt" label="पत्ता" value={business.address} href={mapUrl} />
+                                <InfoItem icon="fa-clock" label="वेळ" value={business.openingHours} />
+                                {business.homeDelivery && 
+                                    <InfoItem icon="fa-bicycle" label="होम डिलिव्हरी" value="उपलब्ध" isHighlight={true} />
+                                }
+                            </InfoCard>
+                        )}
+
+                        {business.services && business.services.length > 0 && 
+                            <InfoCard>
+                                 <div>
+                                    <h4 className="font-bold text-text-primary mb-3">सेवा/उत्पादने:</h4>
+                                    <div className="flex flex-wrap gap-2">
+                                        {business.services.map(s => <span key={s} className="bg-secondary/20 text-secondary-dark text-sm font-semibold px-3 py-1 rounded-full">{s}</span>)}
+                                    </div>
+                                </div>
+                            </InfoCard>
+                        }
+                    </main>
+
+                    <footer className="p-3 border-t border-border-color grid grid-cols-2 gap-3 bg-background/70 rounded-b-xl">
+                        <a href={`https://wa.me/91${business.contactNumber}?text=${encodeURIComponent('नमस्कार, मी "जवळा व्यवसाय निर्देशिका" वरून आपला संपर्क घेतला आहे.')}`} target="_blank" rel="noopener noreferrer" className="w-full text-center py-3 rounded-lg transition-all flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold"><i className="fab fa-whatsapp text-xl"></i> WhatsApp</a>
+                        <button onClick={shareBusinessDetails} disabled={isSharing} className="w-full text-center py-3 rounded-lg transition-all flex items-center justify-center gap-2 bg-secondary hover:bg-secondary/90 text-white font-bold disabled:bg-gray-400">
+                            {isSharing ? <><i className="fas fa-spinner fa-spin"></i> शेअर करत आहे...</> : <><i className="fas fa-share text-xl"></i> शेअर करा</>}
+                        </button>
+                    </footer>
+                </div>
             </div>
-        </div>
+        </>
     );
 };
 
