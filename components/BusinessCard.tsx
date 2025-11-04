@@ -4,61 +4,53 @@ import { formatPhoneNumber } from '@/utils';
 
 interface BusinessCardProps {
     business: Business;
-    categoryIcon?: string;
-    categoryName?: string;
     onViewDetails: (business: Business) => void;
 }
 
-const BusinessCard: React.FC<BusinessCardProps> = ({ business, categoryIcon, categoryName, onViewDetails }) => {
+const BusinessCard: React.FC<BusinessCardProps> = ({ business, onViewDetails }) => {
     return (
-        <div className="group bg-surface rounded-xl shadow-card transition-shadow duration-300 hover:shadow-card-hover overflow-hidden flex flex-col">
-            {/* Card Header */}
-            <div className="p-4 bg-gray-50 border-b border-border-color flex justify-between items-center">
-                <div className="flex items-center gap-3 min-w-0">
-                    <i className={`${categoryIcon || 'fa-solid fa-store'} text-xl text-secondary`}></i>
-                    <span className="text-sm font-semibold text-text-secondary truncate">{categoryName || 'Business'}</span>
+        <div className={`relative group bg-surface rounded-xl shadow-card transition-all duration-300 border-l-4 border-transparent hover:border-primary hover:shadow-card-hover hover:scale-[1.02] ${business.homeDelivery ? 'pt-5 px-5 pb-8' : 'p-5'}`}>
+            
+            {business.homeDelivery && (
+                <div className="absolute bottom-0 right-0 bg-secondary text-white text-xs font-bold px-3 py-1 rounded-tl-lg rounded-br-xl flex items-center gap-1.5" title="होम डिलिव्हरी उपलब्ध">
+                    <i className="fas fa-bicycle"></i>
+                    <span>डिलिव्हरी</span>
                 </div>
-                {business.homeDelivery && (
-                    <div className="flex-shrink-0 bg-secondary text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5" title="होम डिलिव्हरी उपलब्ध">
-                        <i className="fas fa-bicycle"></i>
-                        <span>डिलिव्हरी</span>
+            )}
+
+            <div className="flex justify-between items-start gap-4">
+                {/* Left side: Info */}
+                <div className="flex-grow min-w-0">
+                    <h4 className="font-inter text-lg font-bold text-primary pr-16 truncate group-hover:whitespace-normal" title={business.shopName}>{business.shopName}</h4>
+                    <div className="mt-2 space-y-1.5 text-text-secondary">
+                        <p className="flex items-center gap-3">
+                            <i className="fas fa-user w-4 text-center text-gray-400"></i>
+                            <span>{business.ownerName}</span>
+                        </p>
+                        <p className="flex items-center gap-3">
+                            <i className="fas fa-phone w-4 text-center text-gray-400"></i>
+                            <span className="font-semibold text-text-primary tracking-wider">{formatPhoneNumber(business.contactNumber)}</span>
+                        </p>
                     </div>
-                )}
-            </div>
-
-            {/* Card Body */}
-            <div className="p-4 flex-grow">
-                <h4 className="font-inter text-xl font-bold text-primary truncate group-hover:whitespace-normal" title={business.shopName}>{business.shopName}</h4>
-                <p className="flex items-center gap-3 mt-2 text-text-secondary">
-                    <i className="fas fa-user w-4 text-center text-gray-400"></i>
-                    <span>{business.ownerName}</span>
-                </p>
-                <div className="mt-3 pt-3 border-t border-dashed border-gray-200">
-                     <p className="flex items-center gap-3 text-text-primary">
-                        <i className="fas fa-phone w-4 text-center text-gray-400"></i>
-                        <span className="font-semibold tracking-wider text-md">{formatPhoneNumber(business.contactNumber)}</span>
-                    </p>
                 </div>
-            </div>
 
-            {/* Card Footer Actions */}
-            <div className="border-t border-border-color bg-gray-50/50 grid grid-cols-2">
-                 <a 
-                    href={`tel:${business.contactNumber}`} 
-                    aria-label={`Call ${business.ownerName}`}
-                    className="flex items-center justify-center gap-2 py-3 text-primary font-bold transition-colors hover:bg-primary/10"
-                >
-                    <i className="fas fa-phone"></i>
-                    <span>कॉल करा</span>
-                </a>
-                 <button
-                    onClick={() => onViewDetails(business)}
-                    aria-label="View more details"
-                    className="flex items-center justify-center gap-2 py-3 text-secondary font-bold transition-colors hover:bg-secondary/10 border-l border-border-color"
-                >
-                    <i className="fas fa-eye"></i>
-                    <span>अधिक पहा</span>
-                </button>
+                {/* Right side: Actions */}
+                <div className="flex flex-col items-center justify-center gap-2 pt-1 flex-shrink-0">
+                    <a 
+                        href={`tel:${business.contactNumber}`} 
+                        aria-label={`Call ${business.ownerName}`}
+                        className="flex items-center justify-center w-9 h-9 bg-primary text-white rounded-full shadow-md transition-all transform hover:scale-110 hover:shadow-lg"
+                    >
+                        <i className="fas fa-phone text-lg"></i>
+                    </a>
+                    <button
+                        onClick={() => onViewDetails(business)}
+                        aria-label="View more details"
+                        className="flex items-center justify-center w-9 h-9 bg-gray-200 text-text-secondary rounded-full transition-all transform hover:scale-110 hover:bg-gray-300"
+                    >
+                        <i className="fas fa-ellipsis text-lg"></i>
+                    </button>
+                </div>
             </div>
         </div>
     );
