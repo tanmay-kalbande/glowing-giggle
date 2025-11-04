@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Business, Category } from '../types';
 import BusinessCard from './BusinessCard';
@@ -11,29 +10,39 @@ interface BusinessListProps {
     isSearching?: boolean;
 }
 
-// No Results Component
-const NoResults: React.FC = () => (
+const NoResults: React.FC<{isSearching: boolean}> = ({ isSearching }) => (
     <div className="flex flex-col items-center text-center p-12 bg-gradient-to-br from-gray-50 to-white rounded-xl shadow-card animate-fadeInUp">
         <span className="text-7xl mb-5">🔍</span>
-        <h3 className="text-3xl font-bold font-inter text-text-primary">काहीही सापडले नाही</h3>
-        <p className="text-text-secondary mt-2 text-lg">कृपया तुमचा शोध बदला किंवा वेगळी श्रेणी निवडा.</p>
+        <h3 className="text-3xl font-bold font-inter text-text-primary">
+            {isSearching ? "शोध परिणाम नाहीत" : "या श्रेणीमध्ये व्यवसाय नाहीत"}
+        </h3>
+        <p className="text-text-secondary mt-2 text-lg">
+            {isSearching ? "कृपया तुमचा शोध बदला." : "कृपया वेगळी श्रेणी निवडा."}
+        </p>
     </div>
 );
 
 const BusinessList: React.FC<BusinessListProps> = ({ businesses, categories, selectedCategoryId, onViewDetails, isSearching = false }) => {
+    const categoryMap = React.useMemo(() => new Map<string, Category>(categories.map(cat => [cat.id, cat])), [categories]);
+
     if (businesses.length === 0) {
-        if (isSearching) {
-            return null; // Show a blank space during search if no results are found
-        }
-        return <NoResults />; // Show message for empty categories
+        return <NoResults isSearching={isSearching} />;
     }
     
     const renderBusinessCards = (businessList: Business[]) => (
-        businessList.map((business, index) => (
-            <div key={business.id} className="animate-fadeInUp" style={{ animationDelay: `${index * 50}ms` }}>
-                <BusinessCard business={business} onViewDetails={onViewDetails} />
-            </div>
-        ))
+        businessList.map((business, index) => {
+            const category = categoryMap.get(business.category);
+            return (
+                <div key={business.id} className="animate-fadeInUp" style={{ animationDelay: `${index * 50}ms` }}>
+                    <BusinessCard 
+                        business={business} 
+                        onViewDetails={onViewDetails}
+                        categoryName={category?.name}
+                        categoryIcon={category?.icon}
+                    />
+                </div>
+            )
+        })
     );
 
     if (selectedCategoryId || isSearching) {
@@ -49,12 +58,10 @@ const BusinessList: React.FC<BusinessListProps> = ({ businesses, categories, sel
         return acc;
     }, {} as Record<string, Business[]>);
 
-    const categoryMap = new Map<string, Category>(categories.map(cat => [cat.id, cat]));
 
     return (
         <div className="space-y-12">
-            {Object.keys(groupedBusinesses).map((categoryId, groupIndex) => {
-                const businessGroup = groupedBusinesses[categoryId];
+            {Object.entries(groupedBusinesses).map(([categoryId, businessGroup], groupIndex) => {
                 const category = categoryMap.get(categoryId);
                 if (!category) return null;
                 
