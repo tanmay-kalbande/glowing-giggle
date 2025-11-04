@@ -1,3 +1,4 @@
+
   import React, { useState, useMemo } from 'react';
   import { Business, Category } from '../types';
   import { GoogleGenAI, Type } from "@google/genai";
@@ -131,14 +132,8 @@
 
           } catch (err) {
               console.error("AI Chat Error:", err);
-              let errorMessage = 'उत्तर मिळवताना एक समस्या आली. कृपया पुन्हा प्रयत्न करा.';
-              if (err instanceof Error) {
-                  if (err.message.includes('API_KEY')) {
-                      errorMessage = err.message;
-                  } else if (err.message.includes('API key not valid')) {
-                      errorMessage = 'The provided API key is invalid. Please check your configuration.';
-                  }
-              }
+              const errorMessage = 'उत्तर मिळवताना एक समस्या आली. कृपया पुन्हा प्रयत्न करा.';
+              // FIX: Removed specific API key error messages shown to the user to comply with guidelines.
               setError(errorMessage);
           } finally {
               setIsLoading(false);
