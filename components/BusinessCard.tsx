@@ -1,7 +1,6 @@
 import React from 'react';
 import { Business } from '../types';
 import { formatPhoneNumber } from '@/utils';
-import StarRating from './common/StarRating';
 
 interface BusinessCardProps {
     business: Business;
@@ -9,24 +8,25 @@ interface BusinessCardProps {
 }
 
 const BusinessCard: React.FC<BusinessCardProps> = ({ business, onViewDetails }) => {
+    // FIX: Safe rating calculations with proper null checks
+    const hasRatings = business.ratingCount && business.ratingCount > 0;
+    const displayRating = hasRatings && business.avgRating ? business.avgRating.toFixed(1) : '-';
+    const ratingColor = hasRatings ? 'from-yellow-400 to-yellow-500' : 'from-gray-300 to-gray-400';
+    
     return (
-        <div className={`relative group bg-surface rounded-xl shadow-card transition-all duration-300 border-l-4 border-transparent hover:border-primary hover:shadow-card-hover hover:scale-[1.02] p-5 ${business.homeDelivery || (business.ratingCount && business.ratingCount > 0) ? 'pb-8' : ''}`}>
+        <div className={`relative group bg-surface rounded-xl shadow-card transition-all duration-300 border-l-4 border-transparent hover:border-primary hover:shadow-card-hover hover:scale-[1.02] p-5 ${business.homeDelivery || hasRatings ? 'pb-8' : ''}`}>
             
             {/* Bottom badges container */}
             <div className="absolute bottom-0 right-0 flex items-center gap-2">
                 {/* Rating badge - Always show */}
-                <div className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-white text-xs font-bold px-3 py-1 rounded-tl-lg flex items-center gap-1.5 shadow-md" title={business.ratingCount && business.ratingCount > 0 ? `${business.ratingCount} रेटिंग्स` : 'अजून रेटिंग नाही'}>
-                    {business.ratingCount && business.ratingCount > 0 ? (
-                        <>
-                            <span className="text-sm">{(business.avgRating || 0).toFixed(1)}</span>
-                            <i className="fas fa-star text-xs"></i>
-                        </>
-                    ) : (
-                        <>
-                            <span className="text-sm opacity-80">-</span>
-                            <i className="far fa-star text-xs opacity-80"></i>
-                        </>
-                    )}
+                <div 
+                    className={`bg-gradient-to-br ${ratingColor} text-white text-xs font-bold px-3 py-1 rounded-tl-lg flex items-center gap-1.5 shadow-md transition-all`}
+                    title={hasRatings ? `${business.ratingCount} रेटिंग्स` : 'अजून रेटिंग नाही'}
+                >
+                    <span className={`text-sm ${!hasRatings ? 'opacity-70' : ''}`}>
+                        {displayRating}
+                    </span>
+                    <i className={`${hasRatings ? 'fas' : 'far'} fa-star text-xs ${!hasRatings ? 'opacity-70' : ''}`}></i>
                 </div>
                 
                 {/* Delivery badge */}
@@ -42,7 +42,9 @@ const BusinessCard: React.FC<BusinessCardProps> = ({ business, onViewDetails }) 
                 {/* Left side: Info */}
                 <div className="flex-grow min-w-0">
                     <div className="flex items-center justify-between">
-                         <h4 className="font-inter text-lg font-bold text-primary pr-4 truncate group-hover:whitespace-normal" title={business.shopName}>{business.shopName}</h4>
+                         <h4 className="font-inter text-lg font-bold text-primary pr-4 truncate group-hover:whitespace-normal transition-all" title={business.shopName}>
+                            {business.shopName}
+                         </h4>
                     </div>
                     <div className="mt-2 space-y-1.5 text-text-secondary">
                         <p className="flex items-center gap-3">
@@ -51,7 +53,9 @@ const BusinessCard: React.FC<BusinessCardProps> = ({ business, onViewDetails }) 
                         </p>
                         <p className="flex items-center gap-3">
                             <i className="fas fa-phone w-4 text-center text-gray-400"></i>
-                            <span className="font-semibold text-text-primary tracking-wider">{formatPhoneNumber(business.contactNumber)}</span>
+                            <span className="font-semibold text-text-primary tracking-wider">
+                                {formatPhoneNumber(business.contactNumber)}
+                            </span>
                         </p>
                     </div>
                 </div>
