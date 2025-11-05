@@ -206,8 +206,13 @@ export const deleteBusiness = async (businessId: string): Promise<void> => {
   if (error) throw error;
 };
 
+// This is a partial replacement for the rating-related functions in supabaseClient.ts
+// Replace the existing rating functions with these improved versions
+
+import { supabase } from './supabaseClient'; // Assuming main export exists
+
 // ============================================
-// RATING FUNCTIONS - Enhanced
+// RATING FUNCTIONS - Enhanced with Edit Support
 // ============================================
 interface AddRatingPayload {
   businessId: string;
@@ -221,6 +226,7 @@ interface RatingResponse {
   message: string;
   newAvgRating?: number;
   newRatingCount?: number;
+  wasUpdate?: boolean;
 }
 
 export const addBusinessRating = async ({ 
@@ -238,7 +244,7 @@ export const addBusinessRating = async ({
   }
 
   try {
-    // Check existing rating
+    // Check for existing rating
     const { data: existingRating, error: checkError } = await supabase
       .from('business_ratings')
       .select('id, rating')
@@ -246,49 +252,68 @@ export const addBusinessRating = async ({
       .eq('device_id', deviceId)
       .maybeSingle();
 
-    if (checkError) {
+    if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows
       console.error('Error checking existing rating:', checkError);
       throw new Error('रेटिंग तपासताना त्रुटी आली.');
     }
 
+    let wasUpdate = false;
+
     if (existingRating) {
-      throw new Error('तुम्ही या व्यवसायाला आधीच रेट केले आहे.');
+      // UPDATE existing rating
+      wasUpdate = true;
+      const { error: updateError } = await supabase
+        .from('business_ratings')
+        .update({ 
+          rating,
+          user_name: userName || null,
+          created_at: new Date().toISOString() // Update timestamp
+        })
+        .eq('id', existingRating.id);
+
+      if (updateError) {
+        console.error('Error updating rating:', updateError);
+        throw new Error('रेटिंग अपडेट करताना त्रुटी आली.');
+      }
+    } else {
+      // INSERT new rating
+      const { error: insertError } = await supabase
+        .from('business_ratings')
+        .insert([{
+          business_id: businessId,
+          rating,
+          device_id: deviceId,
+          user_name: userName || null
+        }]);
+
+      if (insertError) {
+        console.error('Error inserting rating:', insertError);
+        
+        if (insertError.code === '23505') {
+          throw new Error('तुम्ही या व्यवसायाला आधीच रेट केले आहे.');
+        }
+        
+        if (insertError.code === '23503') {
+          throw new Error('हा व्यवसाय अस्तित्वात नाही.');
+        }
+        
+        throw new Error('रेटिंग सेव्ह करताना त्रुटी आली.');
+      }
     }
 
-    // Insert new rating
-    const { error: insertError } = await supabase
-      .from('business_ratings')
-      .insert([{
-        business_id: businessId,
-        rating,
-        device_id: deviceId,
-        user_name: userName || null
-      }]);
-
-    if (insertError) {
-      console.error('Error inserting rating:', insertError);
-      
-      if (insertError.code === '23505') {
-        throw new Error('तुम्ही या व्यवसायाला आधीच रेट केले आहे.');
-      }
-      
-      if (insertError.code === '23503') {
-        throw new Error('हा व्यवसाय अस्तित्वात नाही.');
-      }
-      
-      throw new Error('रेटिंग सेव्ह करताना त्रुटी आली.');
-    }
-
-    // Fetch updated statistics using RPC
+    // Fetch updated statistics
     const stats = await getBusinessRatingStats(businessId);
 
     return {
       success: true,
-      message: userName 
-        ? `धन्यवाद ${userName}! तुमचे रेटिंग स्वीकारले आहे.` 
-        : 'तुमचे रेटिंग स्वीकारले आहे, धन्यवाद!',
+      message: wasUpdate 
+        ? '✓ तुमचे रेटिंग अपडेट झाले!' 
+        : (userName 
+            ? `✓ धन्यवाद ${userName}! तुमचे रेटिंग स्वीकारले आहे.` 
+            : '✓ तुमचे रेटिंग स्वीकारले आहे, धन्यवाद!'),
       newAvgRating: stats.avgRating,
-      newRatingCount: stats.ratingCount
+      newRatingCount: stats.ratingCount,
+      wasUpdate
     };
 
   } catch (error: any) {
@@ -298,68 +323,101 @@ export const addBusinessRating = async ({
 };
 
 export const getBusinessRatingStats = async (businessId: string): Promise<{ avgRating: number; ratingCount: number }> => {
-  const { data, error } = await supabase
-    .rpc('get_business_ratings_stats', { p_business_id: businessId }); // FIX: Changed to plural 'ratings' as a speculative fix for 404.
+  try {
+    // Try RPC first
+    const { data, error } = await supabase
+      .rpc('get_business_ratings_stats', { p_business_id: businessId });
 
-  if (error) {
-    console.error('Error fetching rating stats:', error);
-    // Fallback: calculate from raw data
-    const { data: ratings, error: ratingsError } = await supabase
-      .from('business_ratings')
-      .select('rating')
-      .eq('business_id', businessId);
-
-    if (ratingsError || !ratings) {
-      return { avgRating: 0, ratingCount: 0 };
+    if (!error && data) {
+      return {
+        avgRating: data.avgrating || 0,
+        ratingCount: data.ratingcount || 0
+      };
     }
-
-    const count = ratings.length;
-    const avg = count > 0 ? ratings.reduce((sum, r) => sum + r.rating, 0) / count : 0;
-    return { avgRating: avg, ratingCount: count };
+  } catch (rpcError) {
+    console.warn('RPC failed, using fallback:', rpcError);
   }
 
-  return {
-    avgRating: data?.avgrating || 0,
-    ratingCount: data?.ratingcount || 0
-  };
+  // Fallback: Calculate from raw data
+  const { data: ratings, error: ratingsError } = await supabase
+    .from('business_ratings')
+    .select('rating')
+    .eq('business_id', businessId);
+
+  if (ratingsError || !ratings) {
+    console.error('Error in fallback rating fetch:', ratingsError);
+    return { avgRating: 0, ratingCount: 0 };
+  }
+
+  const count = ratings.length;
+  const avg = count > 0 
+    ? ratings.reduce((sum, r) => sum + r.rating, 0) / count 
+    : 0;
+  
+  return { avgRating: avg, ratingCount: count };
 };
 
 export const hasDeviceRated = async (businessId: string, deviceId: string): Promise<boolean> => {
-  const { data, error } = await supabase
-    .rpc('has_device_rated_business', { 
-      p_business_id: businessId, 
-      p_device_id: deviceId 
-    });
+  try {
+    // Try RPC first
+    const { data, error } = await supabase
+      .rpc('has_device_rated_business', { 
+        p_business_id: businessId, 
+        p_device_id: deviceId 
+      });
 
-  if (error) {
-    console.error('Error checking device rating:', error);
-    // Fallback
-    const { data: rating, error: ratingError } = await supabase
-      .from('business_ratings')
-      .select('id')
-      .eq('business_id', businessId)
-      .eq('device_id', deviceId)
-      .maybeSingle();
-
-    return !ratingError && !!rating;
+    if (!error) {
+      return !!data;
+    }
+  } catch (rpcError) {
+    console.warn('RPC failed, using fallback:', rpcError);
   }
 
-  return !!data;
+  // Fallback
+  const { data: rating, error: ratingError } = await supabase
+    .from('business_ratings')
+    .select('id')
+    .eq('business_id', businessId)
+    .eq('device_id', deviceId)
+    .maybeSingle();
+
+  if (ratingError && ratingError.code !== 'PGRST116') {
+    console.error('Error checking device rating:', ratingError);
+    return false;
+  }
+
+  return !!rating;
 };
 
 export const getBusinessRatings = async (businessId: string) => {
   const { data, error } = await supabase
     .from('business_ratings')
-    .select('rating, user_name, created_at')
+    .select('rating, user_name, created_at, device_id')
     .eq('business_id', businessId)
     .order('created_at', { ascending: false });
 
   if (error) {
     console.error('Error fetching ratings:', error);
-    throw error;
+    return [];
   }
 
   return data || [];
+};
+
+// Get user's specific rating for a business
+export const getUserRating = async (businessId: string, deviceId: string): Promise<number | null> => {
+  const { data, error } = await supabase
+    .from('business_ratings')
+    .select('rating')
+    .eq('business_id', businessId)
+    .eq('device_id', deviceId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return data.rating;
 };
 
 // ============================================
