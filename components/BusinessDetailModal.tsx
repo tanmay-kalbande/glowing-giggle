@@ -1,4 +1,3 @@
-// components/BusinessDetailModal.tsx - Updated with editable ratings and optional name
 import React, { useState, useEffect } from 'react';
 import { Business } from '../types';
 import { formatPhoneNumber, getDeviceId, hasRated, markAsRated, getUserName, hasBeenPromptedForName, setUserName, markNamePrompted } from '@/utils';
@@ -7,7 +6,7 @@ import StarRating from './common/StarRating';
 import NamePromptModal from './common/NamePromptModal';
 
 const InfoCard: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <div className="bg-surface rounded-lg shadow-subtle p-5 space-y-4">
+    <div className="bg-white/80 backdrop-blur-sm rounded-lg shadow-sm p-4 space-y-3 border border-gray-100">
         {children}
     </div>
 );
@@ -16,14 +15,14 @@ const InfoItem: React.FC<{ icon: string; label: string; value?: string | React.R
     if (!value) return null;
     const valueClasses = `text-text-secondary ${isHighlight ? 'font-bold text-green-700' : ''}`;
     return (
-        <div className="flex items-start gap-4">
-            <i className={`fas ${icon} w-5 text-center text-secondary text-lg pt-1`}></i>
-            <div>
-                <p className="font-semibold text-text-secondary text-sm">{label}</p>
+        <div className="flex items-start gap-3">
+            <i className={`fas ${icon} w-4 text-center text-secondary text-base pt-0.5`}></i>
+            <div className="flex-1 min-w-0">
+                <p className="font-medium text-text-secondary text-xs mb-0.5">{label}</p>
                 {typeof value === 'string' ? (
-                     <a href={href} target="_blank" rel="noopener noreferrer" className={href ? "text-primary hover:underline" : valueClasses}>{value}</a>
+                     <a href={href} target="_blank" rel="noopener noreferrer" className={href ? "text-primary hover:underline text-sm" : `${valueClasses} text-sm`}>{value}</a>
                 ) : (
-                    <div className={valueClasses}>{value}</div>
+                    <div className={`${valueClasses} text-sm`}>{value}</div>
                 )}
             </div>
         </div>
@@ -47,7 +46,7 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
     const [showNamePrompt, setShowNamePrompt] = useState(false);
     const [userRating, setUserRating] = useState<number>(0);
     
-    // Local state for ratings - always visible
+    // Local state for ratings
     const [displayRating, setDisplayRating] = useState(0);
     const [displayCount, setDisplayCount] = useState(0);
     const [isLoadingRatings, setIsLoadingRatings] = useState(true);
@@ -58,38 +57,42 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
             if (!business) return;
             
             setIsLoadingRatings(true);
+            setRatingMessage(null); // Clear any previous messages
             
             try {
-                // Check if user has rated (local check first for speed)
+                // Check if user has rated
                 const localCheck = hasRated(business.id);
-                setUserHasRated(localCheck);
+                const deviceId = getDeviceId();
+                const serverCheck = await SupabaseService.hasDeviceRated(business.id, deviceId);
+                
+                // Sync local with server
+                if (serverCheck && !localCheck) {
+                    markAsRated(business.id);
+                }
+                
+                setUserHasRated(serverCheck);
                 
                 // Get user name if available
                 const storedName = getUserName();
                 setUserNameState(storedName);
                 
-                // Fetch fresh rating statistics from server
+                // Fetch fresh rating statistics
                 const stats = await SupabaseService.getBusinessRatingStats(business.id);
                 setDisplayRating(stats.avgRating);
                 setDisplayCount(stats.ratingCount);
                 
-                // Verify with server if local check says they haven't rated
-                if (!localCheck) {
-                    const deviceId = getDeviceId();
-                    const serverCheck = await SupabaseService.hasDeviceRated(business.id, deviceId);
-                    
-                    if (serverCheck !== localCheck) {
-                        // Sync local storage with server state
-                        if (serverCheck) {
-                            markAsRated(business.id);
-                        }
-                        setUserHasRated(serverCheck);
+                // If user has rated, try to get their specific rating
+                if (serverCheck) {
+                    const ratings = await SupabaseService.getBusinessRatings(business.id);
+                    const userRatingEntry = ratings.find(r => r.user_name === storedName);
+                    if (userRatingEntry) {
+                        setUserRating(userRatingEntry.rating);
                     }
                 }
                 
-                // Show soft name prompt on first app use (non-blocking)
-                if (!hasBeenPromptedForName()) {
-                    setTimeout(() => setShowNamePrompt(true), 1000);
+                // Show soft name prompt on first app use (delayed, non-blocking)
+                if (!hasBeenPromptedForName() && !storedName) {
+                    setTimeout(() => setShowNamePrompt(true), 1500);
                 }
                 
             } catch (error) {
@@ -103,7 +106,7 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
         };
         
         loadRatingData();
-    }, [business]);
+    }, [business?.id]); // Only re-run when business ID changes
 
     // Handle name submission
     const handleNameSubmit = (name: string) => {
@@ -121,16 +124,32 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
     const handleRatingSubmit = async (rating: number) => {
         if (!business || isSubmittingRating) return;
         
-        // Allow editing existing rating
-        if (userHasRated) {
-            const confirm = window.confirm('तुम्ही आधीच रेट केले आहे. तुमचे रेटिंग बदलायचे?');
-            if (!confirm) return;
-        }
+        // Smooth edit flow - no confirmation needed
+        const isEditing = userHasRated && userRating > 0;
         
         setIsSubmittingRating(true);
         setRatingMessage(null);
         
         try {
+            // Optimistically update local rating immediately
+            const previousRating = userRating;
+            setUserRating(rating);
+            
+            // Calculate optimistic display
+            if (isEditing) {
+                // Editing: remove old rating and add new one
+                const totalWithoutOld = (displayRating * displayCount) - previousRating;
+                const newAvg = (totalWithoutOld + rating) / displayCount;
+                setDisplayRating(newAvg);
+            } else {
+                // New rating: add to total
+                const newCount = displayCount + 1;
+                const totalRating = (displayRating * displayCount) + rating;
+                const newAvg = totalRating / newCount;
+                setDisplayRating(newAvg);
+                setDisplayCount(newCount);
+            }
+            
             const result = await SupabaseService.addBusinessRating({
                 businessId: business.id,
                 rating,
@@ -139,50 +158,47 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
             });
             
             // Mark as rated locally
-            markAsRated(business.id);
-            setUserHasRated(true);
-            setUserRating(rating);
+            if (!userHasRated) {
+                markAsRated(business.id);
+                setUserHasRated(true);
+            }
             
-            // Update local display immediately with new values
+            // Update with server's actual values
             if (result.newAvgRating !== undefined && result.newRatingCount !== undefined) {
                 setDisplayRating(result.newAvgRating);
                 setDisplayCount(result.newRatingCount);
-            } else {
-                // Fallback: calculate optimistically
-                const newCount = displayCount + (userRating > 0 ? 0 : 1); // Don't double count if editing
-                const totalRating = (displayRating * displayCount) - (userRating || 0) + rating;
-                const newAvg = totalRating / newCount;
-                setDisplayRating(newAvg);
-                setDisplayCount(newCount);
             }
             
             // Show success message
-            const messageText = userRating > 0 
-                ? 'तुमचे रेटिंग अपडेट केले आहे, धन्यवाद!' 
-                : (result.message || 'तुमचे रेटिंग स्वीकारले आहे, धन्यवाद!');
+            const messageText = isEditing 
+                ? '✓ तुमचे रेटिंग अपडेट झाले!' 
+                : (result.message || '✓ धन्यवाद! तुमचे रेटिंग सेव्ह झाले.');
             
             setRatingMessage({
                 text: messageText,
                 type: 'success'
             });
             
-            // Notify parent component to update main list
+            // Notify parent component
             onRatingSubmitted(business.id, rating);
             
-            // Clear success message after 3 seconds
-            setTimeout(() => setRatingMessage(null), 3000);
+            // Clear message after 2 seconds
+            setTimeout(() => setRatingMessage(null), 2000);
             
         } catch (error: any) {
             console.error("Failed to submit rating", error);
             
-            const errorText = error.message || 'रेटिंग सबमिट करताना त्रुटी आली. कृपया पुन्हा प्रयत्न करा.';
+            // Revert optimistic update
+            setUserRating(previousRating);
+            
+            const errorText = error.message || 'रेटिंग सबमिट करताना त्रुटी आली.';
             setRatingMessage({
                 text: errorText,
                 type: 'error'
             });
             
-            // Clear error message after 5 seconds
-            setTimeout(() => setRatingMessage(null), 5000);
+            // Clear error after 4 seconds
+            setTimeout(() => setRatingMessage(null), 4000);
             
         } finally {
             setIsSubmittingRating(false);
@@ -229,136 +245,159 @@ const BusinessDetailModal: React.FC<BusinessDetailModalProps> = ({ business, onC
             )}
             
             {/* Main Business Detail Modal */}
-            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 animate-fadeInUp" style={{animationDuration: '0.3s'}} onClick={onClose}>
-                <div className="bg-background rounded-xl shadow-xl w-11/12 max-w-md m-4 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-                    <header className="bg-secondary p-5 rounded-t-xl text-white relative">
-                        <button onClick={onClose} className="absolute top-2 right-2 text-white/70 hover:text-white text-3xl w-8 h-8 flex items-center justify-center transition-colors">&times;</button>
-                        <h3 className="font-inter text-2xl font-bold">{business.shopName}</h3>
-                        <p className="opacity-90 text-base">{business.ownerName}</p>
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-40 animate-fadeInUp p-4" style={{animationDuration: '0.2s'}} onClick={onClose}>
+                <div className="bg-gradient-to-br from-background to-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+                    {/* Compact Header */}
+                    <header className="bg-gradient-to-r from-primary to-secondary p-4 text-white relative">
+                        <button onClick={onClose} className="absolute top-3 right-3 text-white/80 hover:text-white text-2xl w-8 h-8 flex items-center justify-center transition-colors bg-white/10 rounded-full hover:bg-white/20">&times;</button>
+                        <h3 className="font-inter text-xl font-bold pr-10">{business.shopName}</h3>
+                        <p className="opacity-90 text-sm mt-0.5">{business.ownerName}</p>
                     </header>
 
-                    <main className="p-4 space-y-3 overflow-y-auto">
+                    <main className="p-4 space-y-3 overflow-y-auto flex-1">
+                        {/* Contact Card */}
                         <InfoCard>
-                            <a href={`tel:${business.contactNumber}`} className="flex items-start gap-4 group">
-                                <i className="fas fa-phone-alt w-5 text-center text-secondary text-lg pt-1 group-hover:text-primary transition-colors"></i>
+                            <a href={`tel:${business.contactNumber}`} className="flex items-center gap-3 group">
+                                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                                    <i className="fas fa-phone-alt text-primary text-lg"></i>
+                                </div>
                                 <div>
-                                    <p className="font-semibold text-text-secondary text-sm">संपर्क</p>
-                                    <p className="text-lg text-primary font-bold tracking-wider group-hover:underline">{formatPhoneNumber(business.contactNumber)}</p>
+                                    <p className="font-medium text-text-secondary text-xs">संपर्क</p>
+                                    <p className="text-base text-primary font-bold tracking-wider group-hover:underline">{formatPhoneNumber(business.contactNumber)}</p>
                                 </div>
                             </a>
                         </InfoCard>
 
+                        {/* Elegant Rating Card */}
                         <InfoCard>
-                            <div className="flex flex-col items-center">
-                                {isLoadingRatings ? (
-                                    <div className="py-4">
-                                        <i className="fas fa-spinner fa-spin text-2xl text-primary"></i>
-                                        <p className="text-sm text-text-secondary mt-2">रेटिंग लोड करत आहे...</p>
+                            {isLoadingRatings ? (
+                                <div className="py-6 flex flex-col items-center">
+                                    <i className="fas fa-spinner fa-spin text-xl text-primary mb-2"></i>
+                                    <p className="text-xs text-text-secondary">रेटिंग लोड करत आहे...</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {/* Rating Display */}
+                                    <div className="text-center pb-3 border-b border-gray-100">
+                                        <div className="flex items-center justify-center gap-2 mb-2">
+                                            <span className="text-3xl font-bold text-primary">
+                                                {displayCount > 0 ? displayRating.toFixed(1) : '-'}
+                                            </span>
+                                            <div className="text-left">
+                                                <div className="flex items-center gap-1">
+                                                    {[...Array(5)].map((_, i) => (
+                                                        <i key={i} className={`fas fa-star text-xs ${i < Math.round(displayRating) ? 'text-yellow-500' : 'text-gray-300'}`}></i>
+                                                    ))}
+                                                </div>
+                                                <p className="text-xs text-text-secondary mt-0.5">
+                                                    {displayCount > 0 ? `${displayCount} ${displayCount === 1 ? 'रेटिंग' : 'रेटिंग्स'}` : 'रेटिंग नाही'}
+                                                </p>
+                                            </div>
+                                        </div>
                                     </div>
-                                ) : (
-                                    <>
-                                        {/* Always show current rating statistics */}
-                                        <div className="mb-3 text-center">
-                                            <p className="font-bold text-text-primary text-lg mb-1">
-                                                {displayCount > 0 ? `${displayRating.toFixed(1)} / 5.0` : 'अजून रेटिंग नाही'}
-                                            </p>
-                                            {displayCount > 0 && (
-                                                <p className="text-sm text-text-secondary">
-                                                    ({displayCount} {displayCount === 1 ? 'रेटिंग' : 'रेटिंग्स'})
+
+                                    {/* Interactive Rating Section */}
+                                    <div className="flex flex-col items-center py-2">
+                                        <StarRating 
+                                            rating={userRating} 
+                                            onRatingChange={handleRatingSubmit}
+                                            disabled={isSubmittingRating}
+                                            size="lg"
+                                            showLabel={!userHasRated}
+                                            interactive={true}
+                                        />
+                                        
+                                        {/* User Status */}
+                                        <div className="mt-3 text-center">
+                                            {userHasRated ? (
+                                                <p className="text-xs text-green-600 font-medium flex items-center gap-1.5 justify-center">
+                                                    <i className="fas fa-check-circle"></i>
+                                                    तुमचे रेटिंग: {userRating} ⭐ {userName && `(${userName})`}
+                                                </p>
+                                            ) : (
+                                                <p className="text-xs text-primary font-medium">
+                                                    {isSubmittingRating ? 'रेटिंग सेव्ह करत आहे...' : '⭐ रेट करण्यासाठी स्टार क्लिक करा'}
                                                 </p>
                                             )}
-                                        </div>
-
-                                        {/* Star display - always interactive */}
-                                        <div className="mb-3">
-                                            <StarRating 
-                                                rating={userRating || displayRating} 
-                                                onRatingChange={handleRatingSubmit}
-                                                disabled={isSubmittingRating}
-                                                size="lg"
-                                                showLabel={!userHasRated}
-                                            />
-                                        </div>
-
-                                        {/* User name display/prompt */}
-                                        {userName ? (
-                                            <p className="text-xs text-text-secondary mb-2">
-                                                {userHasRated ? `तुमचे रेटिंग: ${userRating} ⭐` : `रेटिंग ${userName} म्हणून दिली जाईल`}
-                                            </p>
-                                        ) : !userHasRated && (
-                                            <button 
-                                                onClick={() => setShowNamePrompt(true)}
-                                                className="text-xs text-primary hover:underline mb-2"
-                                            >
-                                                नाव टाका (ऐच्छिक)
-                                            </button>
-                                        )}
-
-                                        {/* Rating status message */}
-                                        <p className="text-sm font-semibold text-center mb-2">
-                                            {userHasRated ? (
-                                                <span className="text-green-600 flex items-center justify-center gap-2">
-                                                    <i className="fas fa-check-circle"></i>
-                                                    तुमचे रेटिंग दिले आहे (बदलण्यासाठी क्लिक करा)
-                                                </span>
-                                            ) : (
-                                                <span className="text-primary">
-                                                    {isSubmittingRating ? 'रेटिंग सबमिट करत आहे...' : '⭐ रेट करण्यासाठी क्लिक करा'}
-                                                </span>
+                                            
+                                            {/* Name prompt link */}
+                                            {!userName && !userHasRated && (
+                                                <button 
+                                                    onClick={() => setShowNamePrompt(true)}
+                                                    className="text-xs text-secondary hover:underline mt-1 flex items-center gap-1 justify-center mx-auto"
+                                                >
+                                                    <i className="fas fa-user-plus text-xs"></i>
+                                                    नाव जोडा (ऐच्छिक)
+                                                </button>
                                             )}
-                                        </p>
+                                        </div>
 
-                                        {/* Loading indicator while submitting */}
-                                        {isSubmittingRating && (
-                                            <div className="flex items-center gap-2">
-                                                <i className="fas fa-spinner fa-spin text-primary"></i>
-                                                <p className="text-sm text-primary animate-pulse">कृपया प्रतीक्षा करा...</p>
-                                            </div>
-                                        )}
-
-                                        {/* Success/Error messages */}
+                                        {/* Messages */}
                                         {ratingMessage && (
-                                            <div className={`mt-3 p-3 rounded-lg text-sm font-semibold text-center animate-fadeInUp ${
+                                            <div className={`mt-2 px-3 py-2 rounded-lg text-xs font-medium text-center animate-fadeInUp ${
                                                 ratingMessage.type === 'success' 
                                                     ? 'bg-green-50 text-green-700 border border-green-200' 
                                                     : 'bg-red-50 text-red-700 border border-red-200'
                                             }`}>
-                                                {ratingMessage.type === 'success' && '✓ '}
-                                                {ratingMessage.type === 'error' && '⚠ '}
                                                 {ratingMessage.text}
                                             </div>
                                         )}
-                                    </>
-                                )}
-                            </div>
+                                    </div>
+                                </div>
+                            )}
                         </InfoCard>
 
+                        {/* Additional Info */}
                         {(business.address || business.openingHours || business.homeDelivery) && (
                             <InfoCard>
                                 <InfoItem icon="fa-map-marker-alt" label="पत्ता" value={business.address} href={mapUrl} />
                                 <InfoItem icon="fa-clock" label="वेळ" value={business.openingHours} />
                                 {business.homeDelivery && 
-                                    <InfoItem icon="fa-bicycle" label="होम डिलिव्हरी" value="उपलब्ध" isHighlight={true} />
+                                    <InfoItem icon="fa-bicycle" label="होम डिलिव्हरी" value="उपलब्ध ✓" isHighlight={true} />
                                 }
                             </InfoCard>
                         )}
 
+                        {/* Services */}
                         {business.services && business.services.length > 0 && 
                             <InfoCard>
-                                 <div>
-                                    <h4 className="font-bold text-text-primary mb-3">सेवा/उत्पादने:</h4>
-                                    <div className="flex flex-wrap gap-2">
-                                        {business.services.map(s => <span key={s} className="bg-secondary/20 text-secondary-dark text-sm font-semibold px-3 py-1 rounded-full">{s}</span>)}
+                                <div>
+                                    <h4 className="font-semibold text-sm text-text-primary mb-2 flex items-center gap-2">
+                                        <i className="fas fa-tools text-secondary"></i>
+                                        सेवा/उत्पादने
+                                    </h4>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {business.services.map(s => (
+                                            <span key={s} className="bg-secondary/10 text-secondary-dark text-xs font-medium px-2 py-1 rounded-full border border-secondary/20">
+                                                {s}
+                                            </span>
+                                        ))}
                                     </div>
                                 </div>
                             </InfoCard>
                         }
                     </main>
 
-                    <footer className="p-3 border-t border-border-color grid grid-cols-2 gap-3 bg-background/70 rounded-b-xl">
-                        <a href={`https://wa.me/91${business.contactNumber}?text=${encodeURIComponent('नमस्कार, मी "जवळा व्यवसाय निर्देशिका" वरून आपला संपर्क घेतला आहे.')}`} target="_blank" rel="noopener noreferrer" className="w-full text-center py-3 rounded-lg transition-all flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold"><i className="fab fa-whatsapp text-xl"></i> WhatsApp</a>
-                        <button onClick={shareBusinessDetails} disabled={isSharing} className="w-full text-center py-3 rounded-lg transition-all flex items-center justify-center gap-2 bg-secondary hover:bg-secondary/90 text-white font-bold disabled:bg-gray-400">
-                            {isSharing ? <><i className="fas fa-spinner fa-spin"></i> शेअर करत आहे...</> : <><i className="fas fa-share text-xl"></i> शेअर करा</>}
+                    {/* Compact Footer */}
+                    <footer className="p-3 border-t border-gray-100 grid grid-cols-2 gap-2 bg-white/50 backdrop-blur-sm">
+                        <a 
+                            href={`https://wa.me/91${business.contactNumber}?text=${encodeURIComponent('नमस्कार, मी "जवळा व्यवसाय निर्देशिका" वरून आपला संपर्क घेतला आहे.')}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="w-full text-center py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold text-sm"
+                        >
+                            <i className="fab fa-whatsapp text-lg"></i> WhatsApp
+                        </a>
+                        <button 
+                            onClick={shareBusinessDetails} 
+                            disabled={isSharing} 
+                            className="w-full text-center py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 bg-secondary hover:bg-secondary/90 text-white font-semibold disabled:bg-gray-400 text-sm"
+                        >
+                            {isSharing ? (
+                                <><i className="fas fa-spinner fa-spin"></i> शेअर...</>
+                            ) : (
+                                <><i className="fas fa-share"></i> शेअर</>
+                            )}
                         </button>
                     </footer>
                 </div>
